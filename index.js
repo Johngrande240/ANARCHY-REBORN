@@ -1,6 +1,6 @@
 require('dotenv').config();
 const express = require('express');
-const { Client, GatewayIntentBits, SlashCommandBuilder, Routes } = require('discord.js');
+const { Client, GatewayIntentBits, SlashCommandBuilder, Routes, PermissionFlagsBits } = require('discord.js');
 const { REST } = require('@discordjs/rest');
 const samp = require('samp-query');
 
@@ -245,8 +245,18 @@ const NUKE_THRESHOLD = {
 const welcomeManager = require('./welcomeManager');
 const roleManager = require('./roleManager');
 const { setupStealthCommands } = require('./stealthCommands');
+const { getWarnings, addWarning, handlePenalties } = require('./warningManager');
 
 const commands = [
+    new SlashCommandBuilder()
+        .setName('checkwarnings')
+        .setDescription('Check how many warnings a user has.')
+        .addUserOption(option =>
+            option.setName('target')
+                .setDescription('User to check')
+                .setRequired(true)
+        )
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
   new SlashCommandBuilder()
     .setName('setwelcome')
     .setDescription('Set welcome message configuration')
@@ -1009,6 +1019,53 @@ client.on('guildMemberRemove', member => {
   Logger.logEvent(member.guild, 'memberLeave', member);
 });
 
+// Moderation logging
+client.on('guildBanAdd', async (guild, user) => {
+  const auditLogs = await guild.fetchAuditLogs({ type: 'MEMBER_BAN_ADD', limit: 1 });
+  const banLog = auditLogs.entries.first();
+  
+  if (banLog) {
+    Logger.logModeration(guild, 'ban', {
+      user: user,
+      moderator: banLog.executor,
+      reason: banLog.reason
+    });
+  }
+});
+
+client.on('guildMemberRemove', async (member) => {
+  const auditLogs = await member.guild.fetchAuditLogs({ type: 'MEMBER_KICK', limit: 1 });
+  const kickLog = auditLogs.entries.first();
+
+  if (kickLog && kickLog.target.id === member.id && kickLog.createdTimestamp > (Date.now() - 5000)) {
+    Logger.logModeration(member.guild, 'kick', {
+      user: member.user,
+      moderator: kickLog.executor,
+      reason: kickLog.reason
+    });
+  }
+});
+
+client.on('guildMemberUpdate', async (oldMember, newMember) => {
+  const timeoutChanged = oldMember.communicationDisabledUntil !== newMember.communicationDisabledUntil;
+  
+  if (timeoutChanged && newMember.communicationDisabledUntil) {
+    const auditLogs = await newMember.guild.fetchAuditLogs({ type: 'MEMBER_UPDATE', limit: 1 });
+    const muteLog = auditLogs.entries.first();
+
+    if (muteLog) {
+      Logger.logModeration(newMember.guild, 'mute', {
+        user: newMember.user,
+        moderator: muteLog.executor,
+        reason: muteLog.reason,
+        duration: newMember.communicationDisabledUntil
+          ? `Until ${newMember.communicationDisabledUntil.toLocaleString()}`
+          : 'Indefinite'
+      });
+    }
+  }
+});
+
 // Message automod
 client.on('messageCreate', async message => {
   if (message.author.bot) return;
@@ -1084,6 +1141,12 @@ client.on('messageCreate', async message => {
 
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
+
+  if (interaction.commandName === 'checkwarnings') {
+    const target = interaction.options.getUser('target');
+    const warnings = getWarnings(target.id);
+    await interaction.reply({ content: `${target.tag} has **${warnings}** warning(s).`, ephemeral: true });
+  }
 
   if (interaction.commandName === 'ping') {
     await interaction.reply('Pong!');

@@ -5,7 +5,7 @@ class Logger {
   static #isProcessing = false;
   static #rateLimitDelay = 1000;
   static #MAX_QUEUE_SIZE = 1000;
-  static #LOG_CHANNEL_ID = '1364901701026316308'; //Hardcoded channel ID
+  static #LOG_CHANNEL_ID = '1365619686275809384';
 
   static checkQueueSize() {
     if (this.#logQueue.length > this.#MAX_QUEUE_SIZE) {
@@ -13,6 +13,52 @@ class Logger {
       console.warn('Log queue exceeded maximum size, truncating...');
     }
   }
+
+  static async logModeration(guild, type, data) {
+    try {
+      const logChannel = guild.channels.cache.get(this.#LOG_CHANNEL_ID);
+      if (!logChannel) return;
+
+      const embed = new EmbedBuilder()
+        .setTimestamp()
+        .setFooter({ text: 'Bot Log System' });
+
+      switch (type) {
+        case 'kick':
+          embed.setColor('#FF0000')
+            .setTitle('**Kick Log**')
+            .setDescription(`User: **${data.user.tag}** has been kicked by ${data.moderator.tag}`)
+            .addFields(
+              { name: 'Reason', value: data.reason || 'No reason provided', inline: true },
+              { name: 'Time', value: new Date().toISOString(), inline: true }
+            );
+          break;
+        case 'ban':
+          embed.setColor('#FF0000')
+            .setTitle('**Ban Log**')
+            .setDescription(`User: **${data.user.tag}** has been banned by ${data.moderator.tag}`)
+            .addFields(
+              { name: 'Reason', value: data.reason || 'No reason provided', inline: true },
+              { name: 'Time', value: new Date().toISOString(), inline: true }
+            );
+          break;
+        case 'mute':
+          embed.setColor('#FFFF00')
+            .setTitle('**Mute Log**')
+            .setDescription(`User: **${data.user.tag}** has been muted by ${data.moderator.tag}`)
+            .addFields(
+              { name: 'Duration', value: data.duration || 'Indefinite', inline: true },
+              { name: 'Reason', value: data.reason || 'No reason provided', inline: true }
+            );
+          break;
+      }
+
+      await logChannel.send({ embeds: [embed] });
+    } catch (error) {
+      console.error('Error logging moderation action:', error);
+    }
+  }
+
   static #errorCount = new Map();
   static #ERROR_THRESHOLD = 5;
   static #ERROR_WINDOW = 300000; // 5 minutes

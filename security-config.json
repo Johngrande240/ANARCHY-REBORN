@@ -1,4 +1,8 @@
 {
+  "staffRoleId": "1339191338280685573",
+  "logChannelId": "1365619686275809384",
+  "raidJoinThreshold": 5,
+  "raidJoinTime": 10000,
   "verification": {
     "enabled": true,
     "requiredRole": "Verified",

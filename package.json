@@ -1,18 +1,14 @@
 {
   "name": "nodejs",
   "version": "1.0.0",
-  "description": "Anarchy Reborn Discord bot",
+  "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "engines": {
-    "node": ">=18.0.0"
-  },
   "dependencies": {
     "@discord-player/extractor": "^4.5.1",
     "@discord-player/opus": "^7.1.0",
