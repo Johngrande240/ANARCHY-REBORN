@@ -1,0 +1,44 @@
+{
+  "verification": {
+    "enabled": true,
+    "requiredRole": "Verified",
+    "accountAgeDays": 7,
+    "captchaTimeout": 300000,
+    "maxAttempts": 3,
+    "lockoutDuration": 3600000
+  },
+  "ipSecurity": {
+    "maxRequestsPerIP": 100,
+    "timeWindow": 300000,
+    "blacklistThreshold": 5
+  },
+  "spam": {
+    "threshold": 3,
+    "timeWindow": 5000,
+    "muteDuration": 600000,
+    "maxEmojis": 2,
+    "maxMentions": 3
+  },
+  "raid": {
+    "threshold": 10,
+    "timeWindow": 10000,
+    "accountAgeThreshold": 604800000,
+    "actionType": "kick"
+  },
+  "commands": {
+    "cooldown": 3000,
+    "maxPerMinute": 10
+  },
+  "automod": {
+    "toxicityThreshold": 0.8,
+    "bannedWords": [
+      "fuck tangina tanginamo bubu amp ampota tanga"
+    ],
+    "maxNewlines": 10,
+    "maxLength": 2000
+  },
+  "nsfw": {
+    "action": "kick",
+    "muteDuration": 3600000
+  }
+}
