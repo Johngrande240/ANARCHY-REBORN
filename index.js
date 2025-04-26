@@ -775,11 +775,50 @@ client.on('interactionCreate', interaction => {
   }
 });
 
+// Enhanced penalty system
+async function applyPenalty(member, action, reason) {
+  if (!member || !member.manageable) return;
+
+  const logChannel = member.guild.channels.cache.get(SECURITY_CONFIG.logChannelId);
+  
+  switch(action) {
+    case 'badword':
+      await member.timeout(60000, reason);
+      logChannel?.send(`🔇 **Auto-muted:** ${member.user.tag} (1 min) - ${reason}`);
+      break;
+    case 'spam':
+      await member.timeout(120000, reason);
+      logChannel?.send(`🔇 **Auto-muted:** ${member.user.tag} (2 mins) - ${reason}`);
+      break;
+    case 'raid':
+      await member.ban({ reason });
+      logChannel?.send(`⛔ **Auto-banned:** ${member.user.tag} - ${reason}`);
+      break;
+  }
+}
+
 // Anti-spam handler
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
 
   const key = `${message.author.id}-${message.guild.id}`;
+
+  // Check for bad words
+  const hasBadWord = SECURITY_CONFIG.automod.bannedWords.some(word => 
+    message.content.toLowerCase().includes(word.toLowerCase())
+  );
+
+  if (hasBadWord) {
+    try {
+      await message.delete();
+      await applyPenalty(message.member, 'badword', 'Used inappropriate language');
+      message.channel.send(`${message.author}, please refrain from using inappropriate language.`)
+        .then(msg => setTimeout(() => msg.delete().catch(() => {}), 5000));
+      return;
+    } catch (error) {
+      console.error('Failed to handle bad word:', error);
+    }
+  }
 
   // Check for suspicious content
   const containsSuspiciousContent = message.content.includes('discord.gg/') ||
