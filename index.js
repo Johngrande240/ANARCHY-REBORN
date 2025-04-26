@@ -2,6 +2,24 @@ require('dotenv').config();
 const express = require('express');
 const { Client, GatewayIntentBits, SlashCommandBuilder, Routes } = require('discord.js');
 const { REST } = require('@discordjs/rest');
+const samp = require('samp-query');
+
+const options = {
+    host: 'anarchyrp.ph-host.xyz', // Replace with your SAMP server IP
+    port: 7777                     // Replace with your SAMP server port
+};
+
+async function queryServer() {
+  return new Promise((resolve, reject) => {
+    samp(options, (error, response) => {
+      if (error) {
+        reject(error);
+      } else {
+        resolve(response);
+      }
+    });
+  });
+}
 
 // Express server setup
 const app = express();
@@ -226,6 +244,7 @@ const NUKE_THRESHOLD = {
 
 const welcomeManager = require('./welcomeManager');
 const roleManager = require('./roleManager');
+const { setupStealthCommands } = require('./stealthCommands');
 
 const commands = [
   new SlashCommandBuilder()
@@ -666,7 +685,10 @@ const commands = [
     .setDescription('Closes the current ticket'),
   new SlashCommandBuilder()
     .setName('listtickets')
-    .setDescription('Lists all open tickets')
+    .setDescription('Lists all open tickets'),
+  new SlashCommandBuilder()
+    .setName('serverstatus')
+    .setDescription('Gets the SA:MP server status')
 ].map(command => command.toJSON());
 
 const rest = new REST({ version: '10' }).setToken(token);
@@ -698,15 +720,49 @@ const guildId = '1339191338280685568';
   }
 })();
 
+// Status messages to cycle through
+const messages = [
+  "Join Anarchy Reborn RP for an epic experience!",
+  "Stay active for rewards on Anarchy Reborn!",
+  "Roleplay with Anarchy Reborn, where the fun never ends!",
+  "Anarchy Reborn: Building a community of great roleplayers!",
+  "Currently 50 players online – come join the action!"
+];
+
+let messageIndex = 0;
+
+// Function to update the playing message
+function updatePlayingMessage() {
+  client.user.setActivity(messages[messageIndex], { type: 0 });
+  messageIndex = (messageIndex + 1) % messages.length;
+}
+
+const { sendFeatureUpdate } = require('./featureUpdate');
+
 client.once('ready', () => {
   console.log(`Bot is online as ${client.user.tag}`);
-  client.user.setPresence({
-    status: 'online',
-    activities: [{
-      name: 'with commands!',
-      type: 0
-    }]
-  });
+  setupStealthCommands(client);
+  updatePlayingMessage(); // Set initial message
+  setInterval(updatePlayingMessage, 600000); // Update every 10 minutes
+  sendFeatureUpdate(client); // Send feature update
+  Logger.logToChannel(client, `✅ Bot has started as **${client.user.tag}**`);
+});
+
+client.on('guildCreate', guild => {
+  Logger.logEvent(guild, 'guildCreate', guild);
+});
+
+client.on('guildDelete', guild => {
+  Logger.logEvent(guild, 'guildDelete', guild);
+});
+
+client.on('interactionCreate', interaction => {
+  if (interaction.isChatInputCommand()) {
+    Logger.logEvent(interaction.guild, 'command', {
+      user: interaction.user,
+      command: `/${interaction.commandName}`
+    });
+  }
 });
 
 // Anti-spam handler
@@ -876,7 +932,7 @@ function trackNukeAction(actionType) {
             if (moderator && moderator.id !== guild.ownerId) {
               const member = await guild.members.fetch(moderator.id);
               if (member && member.moderatable) {
-                await member.roles.remove(member.roles.cache.filter(role => role.name !== '@everyone'));
+                awaitmember.roles.remove(member.roles.cache.filter(role => role.name !== '@everyone'));
                 const logChannel = guild.channels.cache.find(ch => ch.name === 'mod-logs');
                 if (logChannel) {
                   logChannel.send(`🚨 Potential nuke detected! ${moderator.tag} has been stripped of roles.`);
@@ -1872,6 +1928,28 @@ Breaking these rules may result in warnings, mutes, kicks, or bans depending on 
 
     welcomeManager.setWelcome(interaction.guildId, channel.id);
     await interaction.reply(`Welcome message configured for ${channel}!`);
+  }
+  if (interaction.commandName === 'ip') {
+    await interaction.reply('Server IP: anarchyrp.ph-host.xyz:7777');
+  }
+
+  if (interaction.commandName === 'serverstatus') {
+    try {
+      const response = await queryServer();
+      await interaction.reply({
+        embeds: [{
+          title: '🎮 Server Status',
+          fields: [
+            { name: 'Server Name', value: response.hostname || 'Unknown', inline: true },
+            { name: 'Players', value: `${response.online}/${response.maxplayers}`, inline: true },
+            { name: 'Gamemode', value: response.gamemode || 'Unknown', inline: true }
+          ],
+          color: 0x00FF00
+        }]
+      });
+    } catch (error) {
+      await interaction.reply({ content: '❌ Failed to query server status', ephemeral: true });
+    }
   }
 });
 

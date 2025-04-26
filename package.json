@@ -1,7 +1,7 @@
 {
   "name": "nodejs",
   "version": "1.0.0",
-  "description": "",
+  "description": "Anarchy Reborn Discord bot",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
@@ -10,6 +10,9 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "dependencies": {
     "@discord-player/extractor": "^4.5.1",
     "@discord-player/opus": "^7.1.0",
@@ -26,6 +29,7 @@
     "ffmpeg-static": "^5.2.0",
     "libsodium-wrappers": "^0.7.15",
     "node-fetch": "^3.3.2",
-    "play-dl": "^1.9.7"
+    "play-dl": "^1.9.7",
+    "samp-query": "^0.1.5"
   }
 }
