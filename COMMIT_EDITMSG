@@ -1,0 +1,28 @@
+Assistant checkpoint: Added SAMP server status integration
+
+Assistant generated file changes:
+- sampQuery.js: Enhance SAMP query with better error handling
+- index.js: Add SAMP server status command handler
+
+---
+
+User prompt:
+
+const samp = require('samp-query');
+
+const options = {
+    host: 'anarchyrp.ph-host.xyz', // Replace with your SAMP server IP
+    port: 7777                     // Replace with your SAMP server port
+};
+
+samp(options, (error, response) => {
+    if (error) {
+        console.error("Failed to query SAMP server:", error);
+        return;
+    }
+
+    console.log(`${response.hostname} - Players: ${response.online}/${response.maxplayers}`);
+});     here can you check and add this also
+
+Replit-Commit-Author: Assistant
+Replit-Commit-Session-Id: 12947baa-8e8b-44c3-b46d-9564df522f67
