@@ -1,20 +1,23 @@
 {
   "name": "nodejs",
   "version": "1.0.0",
-  "description": "A Discord bot built with discord.js and discord-player",
+  "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": ["discord", "bot", "music", "samp"],
-  "author": "YourNameHere",
+  "keywords": [],
+  "author": "",
   "license": "ISC",
   "dependencies": {
     "@discord-player/extractor": "^4.5.1",
     "@discord-player/opus": "^7.1.0",
+    "@discordjs/opus": "^0.10.0",
     "@discordjs/rest": "^2.4.3",
     "@discordjs/voice": "^0.16.1",
     "@distube/spotify": "^2.0.2",
+    "@types/node": "^22.13.11",
     "discord-player": "^6.7.1",
     "discord.js": "^14.18.0",
     "distube": "^5.0.7",
@@ -23,7 +26,6 @@
     "ffmpeg-static": "^5.2.0",
     "libsodium-wrappers": "^0.7.15",
     "node-fetch": "^3.3.2",
-    "openai": "^4.96.0",
     "play-dl": "^1.9.7",
     "samp-query": "^0.1.5"
   }

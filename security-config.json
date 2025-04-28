@@ -36,7 +36,7 @@
   "automod": {
     "toxicityThreshold": 0.8,
     "bannedWords": [
-      "fuck", "tangina", "tanginamo", "bubu", "amp", "ampota", "tanga", "kantot", "pota", "puta", "dapain", "stupid"
+      "fuck tangina tanginamo bubu amp ampota tanga"
     ],
     "maxNewlines": 10,
     "maxLength": 2000
