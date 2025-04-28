@@ -1,6 +1,6 @@
 require('dotenv').config();
 const express = require('express');
-const { Client, GatewayIntentBits, SlashCommandBuilder, Routes, PermissionFlagsBits } = require('discord.js');
+const { Client, GatewayIntentBits, SlashCommandBuilder, Routes, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
 const { REST } = require('@discordjs/rest');
 const samp = require('samp-query');
 
@@ -247,7 +247,33 @@ const roleManager = require('./roleManager');
 const { setupStealthCommands } = require('./stealthCommands');
 const { getWarnings, addWarning, handlePenalties } = require('./warningManager');
 
+const { handleAIChat, toggleBloodMode } = require('./aiHandler.js');
+
 const commands = [
+    new SlashCommandBuilder()
+        .setName('betaannounce')
+        .setDescription('Send beta test announcement to specific channel')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+    new SlashCommandBuilder()
+        .setName('serverup')
+        .setDescription('Announce that the server is online')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+    new SlashCommandBuilder()
+        .setName('serverdown')
+        .setDescription('Announce that the server is offline')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+    new SlashCommandBuilder()
+        .setName('bloodmode')
+        .setDescription('Toggle BloodMode intense penalty ON/OFF')
+        .addStringOption(option =>
+            option.setName('status')
+                .setDescription('Choose ON or OFF')
+                .setRequired(true)
+                .addChoices(
+                    { name: 'ON', value: 'on' },
+                    { name: 'OFF', value: 'off' }
+                ))
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
     new SlashCommandBuilder()
         .setName('checkwarnings')
         .setDescription('Check how many warnings a user has.')
@@ -780,7 +806,7 @@ async function applyPenalty(member, action, reason) {
   if (!member || !member.manageable) return;
 
   const logChannel = member.guild.channels.cache.get(SECURITY_CONFIG.logChannelId);
-  
+
   switch(action) {
     case 'badword':
       await member.timeout(60000, reason);
@@ -801,6 +827,16 @@ async function applyPenalty(member, action, reason) {
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
 
+  // Handle AI chat in designated channel
+  try {
+    const response = await handleAIChat(message, message.author.id);
+    if (response) {
+      await message.channel.send(response);
+    }
+  } catch (error) {
+    console.error('AI Chat Error:', error);
+  }
+
   const key = `${message.author.id}-${message.guild.id}`;
 
   // Check for bad words
@@ -812,7 +848,7 @@ client.on('messageCreate', async (message) => {
     try {
       await message.delete();
       await applyPenalty(message.member, 'badword', 'Used inappropriate language');
-      message.channel.send(`${message.author}, please refrain from using inappropriate language.`)
+      message.channel.send(message.author + ', please refrain from using inappropriate language.')
         .then(msg => setTimeout(() => msg.delete().catch(() => {}), 5000));
       return;
     } catch (error) {
@@ -868,7 +904,7 @@ client.on('messageCreate', async (message) => {
       if (member && member.moderatable) {
         try {
           await member.timeout(MUTE_DURATION, 'Spam detection');
-          message.channel.send(`${message.author} has been muted for spamming.`);
+          message.channel.send(message.author + ' has been muted for spamming.');
           spamMap.delete(key);
         } catch (error) {
           console.error('Failed to mute member:', error);
@@ -889,7 +925,7 @@ client.on('guildMemberAdd', async (member) => {
     suspiciousAccounts.add(member.id);
     logSecurityEvent(member.guild, 'Suspicious Account', {
       user: member.user.tag,
-      accountAge: Math.floor(accountAge / (1000 * 60 * 60 * 24)) + ' days'
+      accountAge: Math.floor(accountAge / (1000 * 60 * 60 * 24))+ ' days'
     });
 
     // Clean up old suspicious accounts after 7 days
@@ -956,7 +992,7 @@ client.on('roleDelete', trackNukeAction('roleDeletions'));
 function trackNukeAction(actionType) {
   return async (target) => {
     const guild = target.guild;
-    const key = `${guild.id}-${actionType}`;
+    const key = guild.id + '-' + actionType;
 
     if (!actionLog.has(key)) {
       actionLog.set(key, {
@@ -970,7 +1006,6 @@ function trackNukeAction(actionType) {
       if (now - log.timestamp < NUKE_THRESHOLD.timeWindow) {
         log.count++;
         if (log.count >= NUKE_THRESHOLD[actionType]) {
-          // Take action against potential nuke
           try {
             const auditLogs = await guild.fetchAuditLogs({
               type: actionType === 'bans' ? 'MEMBER_BAN_ADD' : 
@@ -981,10 +1016,10 @@ function trackNukeAction(actionType) {
             if (moderator && moderator.id !== guild.ownerId) {
               const member = await guild.members.fetch(moderator.id);
               if (member && member.moderatable) {
-                awaitmember.roles.remove(member.roles.cache.filter(role => role.name !== '@everyone'));
+                await member.roles.remove(member.roles.cache.filter(role => role.name !== '@everyone'));
                 const logChannel = guild.channels.cache.find(ch => ch.name === 'mod-logs');
                 if (logChannel) {
-                  logChannel.send(`🚨 Potential nuke detected! ${moderator.tag} has been stripped of roles.`);
+                  logChannel.send('🚨 Potential nuke detected! ' + moderator.tag + ' has been stripped of roles.');
                 }
               }
             }
@@ -993,7 +1028,6 @@ function trackNukeAction(actionType) {
           }
         }
       } else {
-        // Reset counter if outside time window
         log.count = 1;
         log.timestamp = now;
       }
@@ -1062,7 +1096,7 @@ client.on('guildMemberRemove', member => {
 client.on('guildBanAdd', async (guild, user) => {
   const auditLogs = await guild.fetchAuditLogs({ type: 'MEMBER_BAN_ADD', limit: 1 });
   const banLog = auditLogs.entries.first();
-  
+
   if (banLog) {
     Logger.logModeration(guild, 'ban', {
       user: user,
@@ -1087,7 +1121,7 @@ client.on('guildMemberRemove', async (member) => {
 
 client.on('guildMemberUpdate', async (oldMember, newMember) => {
   const timeoutChanged = oldMember.communicationDisabledUntil !== newMember.communicationDisabledUntil;
-  
+
   if (timeoutChanged && newMember.communicationDisabledUntil) {
     const auditLogs = await newMember.guild.fetchAuditLogs({ type: 'MEMBER_UPDATE', limit: 1 });
     const muteLog = auditLogs.entries.first();
@@ -1098,7 +1132,7 @@ client.on('guildMemberUpdate', async (oldMember, newMember) => {
         moderator: muteLog.executor,
         reason: muteLog.reason,
         duration: newMember.communicationDisabledUntil
-          ? `Until ${newMember.communicationDisabledUntil.toLocaleString()}`
+          ? 'Until ' + newMember.communicationDisabledUntil.toLocaleString()
           : 'Indefinite'
       });
     }
@@ -1124,10 +1158,10 @@ client.on('messageCreate', async message => {
 
     if (SECURITY_CONFIG.nsfw.action === 'mute' && member.moderatable) {
       await member.timeout(SECURITY_CONFIG.nsfw.muteDuration, 'NSFW content');
-      message.channel.send(`${message.author} has been muted for posting NSFW content.`);
+      message.channel.send(message.author + ' has been muted for posting NSFW content.');
     } else if (SECURITY_CONFIG.nsfw.action === 'kick' && member.kickable) {
       await member.kick('NSFW content');
-      message.channel.send(`${message.author} has been kicked for posting NSFW content.`);
+      message.channel.send(message.author + ' has been kicked for posting NSFW content.');
     }
 
     logSecurityEvent(message.guild, 'NSFW Content', {
@@ -1158,7 +1192,7 @@ client.on('messageCreate', async message => {
 
     if (userMessages.length >= SPAM_THRESHOLD) {
       await message.member.timeout(300000, 'Spam detection');
-      message.channel.send(`${message.author} has been muted for spamming.`);
+      message.channel.send(message.author + ' has been muted for spamming.');
       spamMap.delete(key);
       return;
     }
@@ -1173,13 +1207,66 @@ client.on('messageCreate', async message => {
 
   if (hasBannedWord || (hasLink && !message.member.permissions.has('MANAGE_MESSAGES'))) {
     await message.delete();
-    message.channel.send(`${message.author}, that type of content is not allowed!`);
+    message.channel.send(message.author + ', that type of content is not allowed!');
     return;
   }
 });
 
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
+
+  if (interaction.commandName === 'serverup') {
+    if (!interaction.memberPermissions.has('ADMINISTRATOR')) {
+      return interaction.reply({ content: 'You need Administrator permission!', ephemeral: true });
+    }
+
+    const serverUpEmbed = {
+      title: '🟢 SERVER STATUS',
+      description: '**ANARCHY ROLEPLAY REBORN**\n\n**Status:** ONLINE\n\nConnect now at:\n`anarchyrp.ph-host.xyz:7777`',
+      color: 0x00FF00,
+      thumbnail: {
+        url: 'https://cdn.discordapp.com/avatars/1364443184100282369/1981a71da1c567b98d7d921356329161.webp?size=1024'
+      },
+      footer: {
+        text: 'Join us now for an epic roleplay experience!'
+      },
+      timestamp: new Date()
+    };
+
+    await interaction.reply({ embeds: [serverUpEmbed] });
+  }
+
+  if (interaction.commandName === 'serverdown') {
+    if (!interaction.memberPermissions.has('ADMINISTRATOR')) {
+      return interaction.reply({ content: 'You need Administrator permission!', ephemeral: true });
+    }
+
+    const serverDownEmbed = {
+      title: '🔴 SERVER STATUS',
+      description: '**ANARCHY ROLEPLAY REBORN**\n\n**Status:** OFFLINE\n\nServer is currently undergoing maintenance.\nPlease stay tuned for updates.',
+      color: 0xFF0000,
+      thumbnail: {
+        url: 'https://cdn.discordapp.com/avatars/1364443184100282369/1981a71da1c567b98d7d921356329161.webp?size=1024'
+      },
+      footer: {
+        text: 'We apologize for the inconvenience.'
+      },
+      timestamp: new Date()
+    };
+
+    await interaction.reply({ embeds: [serverDownEmbed] });
+  }
+
+  if (interaction.commandName === 'bloodmode') {
+    if (!interaction.memberPermissions.has('ADMINISTRATOR')) {
+      return interaction.reply({ content: 'You need Administrator permission!', ephemeral: true });
+    }
+    const status = interaction.options.getString('status');
+    const isEnabled = toggleBloodMode(status);
+    await interaction.reply(`BloodMode is now **${isEnabled ? 'ENABLED' : 'DISABLED'}**!`);
+    Logger.logEvent(interaction.guild, 'bloodmode', { status: isEnabled ? 'enabled' : 'disabled' });
+    return;
+  }
 
   if (interaction.commandName === 'checkwarnings') {
     const target = interaction.options.getUser('target');
@@ -1939,6 +2026,61 @@ Breaking these rules may result in warnings, mutes, kicks, or bans depending on 
     await interaction.reply(`Uptime: ${days}d ${hours}h ${minutes}m`);
   }
 
+  // Beta announcement is now handled by /betaannounce command only
+
+  if (interaction.commandName === 'betaannounce') {
+    if (!interaction.memberPermissions.has('ADMINISTRATOR')) {
+      return interaction.reply({ content: 'You need Administrator permission!', ephemeral: true });
+    }
+
+    const channel = client.channels.cache.get('1363579411571544416');
+    if (channel) {
+      const betaEmbed = new EmbedBuilder()
+        .setTitle('🌟 ANARCHY REBORN ROLEPLAY - BETA TEST ANNOUNCEMENT 🌟')
+        .setColor('#FF6B6B')
+        .setDescription([
+          '═══════════════════════════════════',
+          '',
+          '📢 **EXCITING NEWS!**',
+          'We are thrilled to announce that Anarchy Reborn Roleplay is conducting an exclusive beta test phase!',
+          '',
+          '🎮 **WHAT TO EXPECT**',
+          '• New Game Features',
+          '• Enhanced Roleplay Systems',
+          '• Improved Server Performance',
+          '• Exclusive Beta Tester Rewards',
+          '• Direct Input on Game Development',
+          '',
+          '🔍 **BETA TEST DETAILS**',
+          '• Duration: 2 Weeks',
+          '• All Players Welcome',
+          '• Real-time Feedback System',
+          '• Special Discord Roles',
+          '',
+          '💎 **BETA TESTER BENEFITS**',
+          '• Early Access to New Features',
+          '• Exclusive In-game Items',
+          '• Special Discord Badge',
+          '• Direct Communication with Devs',
+          '',
+          '🎯 **HOW TO PARTICIPATE**',
+          '1. Join our Discord Server',
+          '2. Connect to: `anarchyrp.ph-host.xyz:7777`',
+          '3. Start Testing and Having Fun!',
+          '',
+          '═══════════════════════════════════'
+        ].join('\n'))
+        .setImage('https://cdn.discordapp.com/avatars/1364443184100282369/1981a71da1c567b98d7d921356329161.webp?size=1024')
+        .setTimestamp()
+        .setFooter({ text: '🌟 Anarchy Reborn RP - Beta Test Phase 🌟' });
+
+      await channel.send({ embeds: [betaEmbed] });
+      await interaction.reply({ content: 'Beta test announcement sent successfully!', ephemeral: true });
+    } else {
+      await interaction.reply({ content: 'Could not find the specified channel!', ephemeral: true });
+    }
+  }
+
   // Custom replies
   if (interaction.commandName === 'about' || interaction.commandName === 'faq') {
     await interaction.reply(customReplies[interaction.commandName]);
@@ -2053,6 +2195,83 @@ Breaking these rules may result in warnings, mutes, kicks, or bans depending on 
       await interaction.reply({ content: '❌ Failed to query server status', ephemeral: true });
     }
   }
+  if (interaction.commandName === 'donation') {
+    const donationChannel = client.channels.cache.get('1363725566238523512');
+    if (!donationChannel) {
+      return interaction.reply({ content: 'Donation channel not found!', ephemeral: true });
+    }
+
+    const donationEmbeds = [
+      {
+        title: '🎮 ANARCHY ROLEPLAY - DONATION LIST',
+        description: '**BACKPACK PRICES**\n• Small: 200PHP\n• Medium: 300PHP\n• Large: 450PHP',
+        color: 0xFF6B6B,
+        image: { url: 'https://cdn.discordapp.com/attachments/1364574482345361439/1366278097220927549/Red_White_and_Yellow_Modern_Gaming_Initials_Youtube_Channel_Logo_20250422_215024_0000.png?ex=68105d22&is=680f0ba2&hm=ade8cbddd63c6182a9522fef60d48faeea08cca87bea1daf70752658421c6415&' }
+      },
+      {
+        title: '🏠 HOUSE PRICES',
+        description: '• Apartment: 200PHP\n• Low Class: 250PHP\n• Medium Class: 300PHP\n• Upper Class: 350PHP\n• Mansion Type: 400PHP\n• Mansion with Gate: 500PHP',
+        color: 0xFF6B6B,
+        image: { url: 'https://cdn.discordapp.com/attachments/1364574482345361439/1366278097766449272/Red_White_and_Yellow_Modern_Gaming_Initials_Youtube_Channel_Logo_20250422_214813_0000.png?ex=68105d22&is=680f0ba2&hm=4a185b19dc3b0961b8a07774196bf815ed2f345f3e51c12a6175fa192f78dbb2&' }
+      },
+      {
+        title: '🚗 VEHICLE PRICES',
+        description: '• Normal Vehicle: 100PHP\n• Rare Car Vehicle: 200PHP\n• Special Car Vehicle: 300PHP\n• Boats and Planes: 400PHP\n• Restricted Vehicle: 500PHP\n• Gang Air Vehicle: 500PHP\n• Custom Vehicle: 1000PHP',
+        color: 0xFF6B6B,
+        image: { url: 'https://cdn.discordapp.com/attachments/1364574482345361439/1366278098043146250/Red_White_and_Yellow_Modern_Gaming_Initials_Youtube_Channel_Logo_20250422_214517_0000.png?ex=68105d22&is=680f0ba2&hm=936c095cd3e11509186aa233280608764b781d882649c865b6090857737c4382&' }
+      },
+      {
+        title: '🏢 CUSTOM MAPPED BUSINESS',
+        description: '• Small Business: 1000PHP\n• Medium Business: 1500PHP\n• Large Business: 2000PHP',
+        color: 0xFF6B6B,
+        image: { url: 'https://cdn.discordapp.com/attachments/1364574482345361439/1366278098399789056/Red_White_and_Yellow_Modern_Gaming_Initials_Youtube_Channel_Logo_20250422_214100_0000.png?ex=68105d22&is=680f0ba2&hm=93b019f525b9a88c1262e06574823961f51e121e00c4a60407515b5757a6c7ea&' }
+      },
+      {
+        title: '🏪 DYNAMIC BUSINESS',
+        description: '• 24/7, Clothing, Restaurant: 250PHP each\n• Gym, Bar/Club: 250PHP each\n• Advertisement, Appliances: 250PHP each\n• Ammunition, Pharmacy: 500PHP each',
+        color: 0xFF6B6B,
+        image: { url: 'https://cdn.discordapp.com/attachments/1364574482345361439/1366278098739400786/Red_White_and_Yellow_Modern_Gaming_Initials_Youtube_Channel_Logo_20250422_213151_0000.png?ex=68105d22&is=680f0ba2&hm=3759a4eae06e28bf52e4f80f3119687eceec8b52f9df361d6589b5d5ad9fd1c7&' }
+      },
+      {
+        title: '🏬 MALL BUSINESS',
+        description: '• 1st Floor: 300PHP\n• 2nd Floor: 200PHP\n• Branded Business: 400PHP',
+        color: 0xFF6B6B,
+        image: { url: 'https://cdn.discordapp.com/attachments/1364574482345361439/1366278099217416254/Red_White_and_Yellow_Modern_Gaming_Initials_Youtube_Channel_Logo_20250422_212729_0000.png?ex=68105d23&is=680f0ba3&hm=569ea87366147272bf52b8d13fbad5af7d20ff79524ac2cc479bb910a573d5cd&' }
+      },
+      {
+        title: '⚙️ SYSTEM PRICES',
+        description: '• Dynamic Sleep: 200PHP\n• Self Repair: 250PHP\n• Custom Car Toys: 1000PHP\n• Custom System: 2500PHP\n• Custom Faction: 3000PHP\n• Custom Company: 4000PHP',
+        color: 0xFF6B6B,
+        image: { url: 'https://cdn.discordapp.com/attachments/1364574482345361439/1366278099540512789/Red_White_and_Yellow_Modern_Gaming_Initials_Youtube_Channel_Logo_20250422_211829_0000.png?ex=68105d23&is=680f0ba3&hm=866a3eba97ca02660c402f4445dc360f1b62e009142970532542e0b73ce06cd0&' }
+      },
+      {
+        title: '🗺️ LAND PRICES',
+        description: '• Small Land: 1000PHP\n• Medium Land: 1500PHP\n• Large Land: 2000PHP\n• XL Land: 2500PHP',
+        color: 0xFF6B6B,
+        image: { url: 'https://cdn.discordapp.com/attachments/1364574482345361439/1366278099926257704/Red_White_and_Yellow_Modern_Gaming_Initials_Youtube_Channel_Logo_20250422_211358_0000.png?ex=68105d23&is=680f0ba3&hm=5d7b1799c33d88a886e5c3e99a64818269d8a9a4aee6cdc8943ea162913ca589&' }
+      },
+      {
+        title: '🏗️ CUSTOM MAPPING',
+        description: '• Pasalpak (Any Size): 2000PHP\n• Mansion (Any Size): 2500PHP\n• Head Quarters: 3000PHP\n• Island: 4000PHP',
+        color: 0xFF6B6B,
+        image: { url: 'https://cdn.discordapp.com/attachments/1364574482345361439/1366278100245286942/Red_White_and_Yellow_Modern_Gaming_Initials_Youtube_Channel_Logo_20250422_210550_0000.png?ex=68105d23&is=680f0ba3&hm=2c6e52f9a2ea5d536472d884485f208d650ef9ebbee50797e5e54d8f77a1c479&' }
+      },
+      {
+        title: '🚘 GARAGE PRICES',
+        description: '• Small Garage: 50PHP\n• Medium Garage: 100PHP\n• Large Garage: 150PHP',
+        color: 0xFF6B6B,
+        image: { url: 'https://cdn.discordapp.com/attachments/1364574482345361439/1366278100723433513/Red_White_and_Yellow_Modern_Gaming_Initials_Youtube_Channel_Logo_20250422_204703_0000.png?ex=68105d23&is=680f0ba3&hm=d95ebbe26491064220c2075bcb95e29056b28d36e35ac3954da0e31047044b76&' },
+        footer: { text: 'Contact Property Management for inquiries • Anarchy Roleplay' }
+      }
+    ];
+
+    for (const embed of donationEmbeds) {
+      await donationChannel.send({ embeds: [embed] });
+    }
+
+    await interaction.reply({ content: `Donation list has been posted in ${donationChannel}`, ephemeral: true });
+  }
+
 });
 
 // Error handling
