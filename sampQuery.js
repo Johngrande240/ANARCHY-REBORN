@@ -2,7 +2,7 @@
 const samp = require('samp-query');
 
 const options = {
-    host: 'anarchyrp.ph-host.xyz',
+    host: 'newlife-rp.ph-host.xyz',
     port: 7777
 };
 

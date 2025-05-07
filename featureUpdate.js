@@ -19,7 +19,7 @@ function sendFeatureUpdate(client) {
     }
 
     const embed = new EmbedBuilder()
-        .setTitle('🌟 ANARCHY ROLEPLAY BOT - FEATURE UPDATE 🌟')
+        .setTitle('🌟 NEWLIFE ROLEPLAY REVAMPED BOT - FEATURE UPDATE 🌟')
         .setColor('#FFA500')
         .setDescription([
             '═══════════════════════════════════',
@@ -103,7 +103,7 @@ function sendFeatureUpdate(client) {
             '',
             'Use `/help` in the server for a complete list of commands!'
         ].join('\n'))
-        .setFooter({ text: 'Anarchy Reborn RP' })
+        .setFooter({ text: 'NEWLIFE ROLEPLAY REVAMPED' })
         .setTimestamp();
 
     channel.send({ embeds: [embed] })
