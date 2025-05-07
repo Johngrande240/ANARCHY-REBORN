@@ -75,20 +75,35 @@ class Economy {
     return this.data[userId]?.balance || 0;
   }
 
-  addMoney(userId, amount) {
+  #locks = new Map();
+  
+  async addMoney(userId, amount) {
+    if (this.#locks.get(userId)) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+      return this.addMoney(userId, amount);
+    }
+    
+    this.#locks.set(userId, true);
     try {
       if (!this.validateAmount(amount)) {
         throw new Error('Invalid amount');
       }
+      
       if (!this.data[userId]) this.data[userId] = { balance: 0 };
+      const oldBalance = this.data[userId].balance;
       this.data[userId].balance += amount;
+      
       if (!this.saveData()) {
+        this.data[userId].balance = oldBalance;
         throw new Error('Failed to save data');
       }
+      
       return this.data[userId].balance;
     } catch (error) {
       console.error('Error in addMoney:', error);
       return false;
+    } finally {
+      this.#locks.delete(userId);
     }
   }
 

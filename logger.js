@@ -63,6 +63,23 @@ class Logger {
   static #ERROR_THRESHOLD = 5;
   static #ERROR_WINDOW = 300000; // 5 minutes
   static #securityLogs = new Map();
+  
+  static #trackError(context, error) {
+    const now = Date.now();
+    const errorKey = `${error.name}-${context}`;
+
+    if (!this.#errorCount.has(errorKey)) {
+      this.#errorCount.set(errorKey, { count: 1, firstSeen: now });
+    } else {
+      const errorData = this.#errorCount.get(errorKey);
+      errorData.count++;
+
+      if (errorData.count >= this.#ERROR_THRESHOLD &&
+          (now - errorData.firstSeen) <= this.#ERROR_WINDOW) {
+        console.error(`Critical error rate detected for ${errorKey}`);
+      }
+    }
+  }
   static #SECURITY_LOG_RETENTION = 7 * 24 * 60 * 60 * 1000; // 7 days
 
   static logSecurity(guild, type, data) {
@@ -131,18 +148,52 @@ class Logger {
   }
 
   static async logEvent(guild, type, data) {
+    if (!guild || !type) {
+      console.error('Invalid parameters for logEvent');
+      return;
+    }
+
     try {
       const logChannel = guild.channels.cache.get(this.#LOG_CHANNEL_ID);
-      if (!logChannel) return;
+      if (!logChannel) {
+        console.warn(`Log channel not found for guild ${guild.name}`);
+        return;
+      }
 
-      Logger.#logQueue.push({ guild, type, data, logChannel });
+      // Validate and sanitize data
+      const sanitizedData = this.#sanitizeLogData(data);
+      
+      Logger.#logQueue.push({ 
+        guild, 
+        type, 
+        data: sanitizedData,
+        timestamp: Date.now(),
+        logChannel 
+      });
 
       if (!Logger.#isProcessing) {
         Logger.#processQueue();
       }
     } catch (error) {
       console.error('Error in logger:', error);
+      this.#trackError('logEvent', error);
     }
+  }
+
+  static #sanitizeLogData(data) {
+    if (!data) return {};
+    
+    // Remove sensitive information
+    const sanitized = {...data};
+    delete sanitized.token;
+    delete sanitized.password;
+    
+    // Truncate large messages
+    if (sanitized.content && sanitized.content.length > 1000) {
+      sanitized.content = sanitized.content.substring(0, 1000) + '...';
+    }
+    
+    return sanitized;
   }
 
   static async #processQueue() {

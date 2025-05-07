@@ -5,7 +5,7 @@ const { REST } = require('@discordjs/rest');
 const samp = require('samp-query');
 
 const options = {
-    host: 'anarchyrp.ph-host.xyz', // Replace with your SAMP server IP
+    host: 'newlife-rp.ph-host.xyz', // Replace with your SAMP server IP
     port: 7777                     // Replace with your SAMP server port
 };
 
@@ -60,36 +60,15 @@ const client = new Client({
     GatewayIntentBits.GuildWebhooks,
     GatewayIntentBits.GuildInvites,
     GatewayIntentBits.GuildVoiceStates,
-    GatewayIntentBits.GuildPresences,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.GuildMessageReactions,
     GatewayIntentBits.GuildMessageTyping,
     GatewayIntentBits.MessageContent,
-    GatewayIntentBits.DirectMessages,
-    GatewayIntentBits.DirectMessageReactions,
-    GatewayIntentBits.DirectMessageTyping,
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.GuildBans,
-    GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildVoiceStates,
-    GatewayIntentBits.GuildPresences,
-    GatewayIntentBits.GuildMessageReactions,
-    GatewayIntentBits.GuildIntegrations,
-    GatewayIntentBits.GuildModeration,
-    GatewayIntentBits.GuildEmojisAndStickers,
-    GatewayIntentBits.GuildWebhooks,
-    GatewayIntentBits.GuildInvites,
     GatewayIntentBits.DirectMessages,
     GatewayIntentBits.DirectMessageReactions,
     GatewayIntentBits.DirectMessageTyping,
     GatewayIntentBits.GuildScheduledEvents,
-    GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildModeration,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.GuildMessageTyping,
-    GatewayIntentBits.MessageContent
+    GatewayIntentBits.GuildModeration
   ],
   partials: ['MESSAGE', 'CHANNEL', 'REACTION']
 });
@@ -154,9 +133,29 @@ setInterval(() => {
   }
 }, 1800000); // Run every 30 minutes
 
-// Enhanced anti-spam system
+// Enhanced anti-spam system with cleanup
 const spamMap = new Map();
 const userWarnings = new Map();
+
+// Cleanup spam maps every hour
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, messages] of spamMap.entries()) {
+    const oldMessages = messages.filter(msg => now - msg.timestamp <= SPAM_TIME_WINDOW);
+    if (oldMessages.length === 0) {
+      spamMap.delete(key);
+    } else {
+      spamMap.set(key, oldMessages);
+    }
+  }
+  
+  // Cleanup warnings older than 24 hours
+  for (const [key, warning] of userWarnings.entries()) {
+    if (now - warning.timestamp > 86400000) {
+      userWarnings.delete(key);
+    }
+  }
+}, 3600000);
 
 // Enhanced anti-raid system
 const joinedMembers = new Map();
@@ -250,6 +249,12 @@ const { getWarnings, addWarning, handlePenalties } = require('./warningManager')
 const { handleAIChat, toggleBloodMode } = require('./aiHandler.js');
 
 const commands = [
+  new SlashCommandBuilder()
+    .setName('serverrule')
+    .setDescription('Display the SA:MP server rules'),
+  new SlashCommandBuilder()
+    .setName('discordrule')
+    .setDescription('Display the Discord server rules'),
   new SlashCommandBuilder()
     .setName('staff')
     .setDescription('Shows the staff list'),
@@ -743,7 +748,7 @@ if (!clientId) {
   process.exit(1);
 }
 
-const guildId = '1339191338280685568';
+const guildId = '1260925059477012511';
 
 // Register slash commands globally
 (async () => {
@@ -760,20 +765,28 @@ const guildId = '1339191338280685568';
 })();
 
 // Status messages to cycle through
-const messages = [
-  "Join Anarchy Reborn RP for an epic experience!",
-  "Stay active for rewards on Anarchy Reborn!",
-  "Roleplay with Anarchy Reborn, where the fun never ends!",
-  "Anarchy Reborn: Building a community of great roleplayers!",
-  "Currently 50 players online – come join the action!"
+const { ActivityType } = require('discord.js');
+
+const statuses = [
+  { type: ActivityType.Playing, name: '✨ NEWLIFE ROLEPLAY REVAMPED' },
+  { type: ActivityType.Playing, name: '🌟 Creating Unforgettable Stories' },
+  { type: ActivityType.Watching, name: '👥 Building Connections' },
+  { type: ActivityType.Playing, name: '🎭 Where Stories Come Alive' },
+  { type: ActivityType.Watching, name: '🌆 Life in Los Santos' },
+  { type: ActivityType.Listening, name: '🎮 Adventures Unfold' },
+  { type: ActivityType.Playing, name: '💫 Crafting Memories' },
+  { type: ActivityType.Watching, name: '🌙 Dreams Take Flight' },
+  { type: ActivityType.Playing, name: '🎬 Your Story Awaits' },
+  { type: ActivityType.Competing, name: '🏆 Excellence in Roleplay' }
 ];
 
-let messageIndex = 0;
+let statusIndex = 0;
 
-// Function to update the playing message
+// Function to update the activity status
 function updatePlayingMessage() {
-  client.user.setActivity(messages[messageIndex], { type: 0 });
-  messageIndex = (messageIndex + 1) % messages.length;
+  const status = statuses[statusIndex];
+  client.user.setActivity(status.name, { type: status.type });
+  statusIndex = (statusIndex + 1) % statuses.length;
 }
 
 const { sendFeatureUpdate } = require('./featureUpdate');
@@ -782,9 +795,51 @@ client.once('ready', () => {
   console.log(`Bot is online as ${client.user.tag}`);
   setupStealthCommands(client);
   updatePlayingMessage(); // Set initial message
-  setInterval(updatePlayingMessage, 600000); // Update every 10 minutes
+  setInterval(updatePlayingMessage, 10000); // Update every 10 seconds
   sendFeatureUpdate(client); // Send feature update
   Logger.logToChannel(client, `✅ Bot has started as **${client.user.tag}**`);
+});
+
+// Welcome message handler
+client.on('guildMemberAdd', async member => {
+  const welcomeChannel = client.channels.cache.get('1260925060047310928');
+  if (welcomeChannel) {
+    const welcomeEmbed = {
+      title: '👋 Welcome to NEWLIFE ROLEPLAY REVAMPED!',
+      description: `Welcome ${member} to our amazing community!\n\nMake sure to check out our rules and have a great time!`,
+      color: 0x00FF00,
+      thumbnail: {
+        url: member.user.displayAvatarURL({ dynamic: true })
+      },
+      footer: {
+        text: 'NEWLIFE ROLEPLAY REVAMPED',
+        icon_url: member.guild.iconURL()
+      },
+      timestamp: new Date()
+    };
+    await welcomeChannel.send({ embeds: [welcomeEmbed] });
+  }
+});
+
+// Leave message handler
+client.on('guildMemberRemove', async member => {
+  const leaveChannel = client.channels.cache.get('1369636228147974144');
+  if (leaveChannel) {
+    const leaveEmbed = {
+      title: '👋 Member Left',
+      description: `${member.user.tag} has left the server.`,
+      color: 0xFF0000,
+      thumbnail: {
+        url: member.user.displayAvatarURL({ dynamic: true })
+      },
+      footer: {
+        text: 'NEWLIFE ROLEPLAY REVAMPED',
+        icon_url: member.guild.iconURL()
+      },
+      timestamp: new Date()
+    };
+    await leaveChannel.send({ embeds: [leaveEmbed] });
+  }
 });
 
 client.on('guildCreate', guild => {
@@ -1258,7 +1313,7 @@ client.on('interactionCreate', async interaction => {
 
     const serverUpEmbed = {
       title: '🟢 SERVER STATUS',
-      description: '**ANARCHY ROLEPLAY REBORN**\n\n**Status:** ONLINE\n\nConnect now at:\n`anarchyrp.ph-host.xyz:7777`',
+      description: '**NEWLIFE ROLEPLAY REVAMPED**\n\n**Status:** ONLINE\n\nConnect now at:\n`newlife-rp.ph-host.xyz:7777`',
       color: 0x00FF00,
       thumbnail: {
         url: 'https://cdn.discordapp.com/avatars/1364443184100282369/1981a71da1c567b98d7d921356329161.webp?size=1024'
@@ -1279,7 +1334,7 @@ client.on('interactionCreate', async interaction => {
 
     const serverDownEmbed = {
       title: '🔴 SERVER STATUS',
-      description: '**ANARCHY ROLEPLAY REBORN**\n\n**Status:** OFFLINE\n\nServer is currently undergoing maintenance.\nPlease stay tuned for updates.',
+      description: '**NEWLIFE ROLEPLAY REVAMPED**\n\n**Status:** OFFLINE\n\nServer is currently undergoing maintenance.\nPlease stay tuned for updates.',
       color: 0xFF0000,
       thumbnail: {
         url: 'https://cdn.discordapp.com/avatars/1364443184100282369/1981a71da1c567b98d7d921356329161.webp?size=1024'
@@ -2072,7 +2127,7 @@ Breaking these rules may result in warnings, mutes, kicks, or bans depending on 
     const channel = client.channels.cache.get('1363579411571544416');
     if (channel) {
       const betaEmbed = new EmbedBuilder()
-        .setTitle('🌟 ANARCHY REBORN ROLEPLAY - BETA TEST ANNOUNCEMENT 🌟')
+        .setTitle('🌟 NEWLIFE ROLEPLAY REVAMPED - BETA TEST ANNOUNCEMENT 🌟')
         .setColor('#FF6B6B')
         .setDescription([
           '═══════════════════════════════════',
@@ -2108,7 +2163,7 @@ Breaking these rules may result in warnings, mutes, kicks, or bans depending on 
         ].join('\n'))
         .setImage('https://cdn.discordapp.com/avatars/1364443184100282369/1981a71da1c567b98d7d921356329161.webp?size=1024')
         .setTimestamp()
-        .setFooter({ text: '🌟 Anarchy Reborn RP - Beta Test Phase 🌟' });
+        .setFooter({ text: '🌟 NEWLIFE ROLEPLAY REVAMPED - Beta Test Phase 🌟' });
 
       await channel.send({ embeds: [betaEmbed] });
       await interaction.reply({ content: 'Beta test announcement sent successfully!', ephemeral: true });
@@ -2231,6 +2286,131 @@ Breaking these rules may result in warnings, mutes, kicks, or bans depending on 
       await interaction.reply({ content: '❌ Failed to query server status', ephemeral: true });
     }
   }
+  if (interaction.commandName === 'serverrule') {
+    const rulesChannel = client.channels.cache.get('1260925060248768615');
+    if (!rulesChannel) {
+      return interaction.reply({ content: 'Rules channel not found!', ephemeral: true });
+    }
+
+    const serverRulesEmbeds = [
+      {
+        title: '📜 SERVER RULES - PART 1',
+        color: 0xFF6B6B,
+        description: '═══════════════════════════════════\n\n' +
+          '**FORCE RP ON MEDIC**\n```\nForcing the medic to not heal the injured player is considered as force rp and finishing the player will be considered a non rp finish\n```\n\n' +
+          '**TRASHTALKING THE INJURED PLAYER**\n```\nNo toxic policy\nTrashtalking the injured player or using animation on the injured player is strictly not allowed.\n```\n\n' +
+          '**ABUSE NEWB SYSTEM**\n```\nAbusing the newbie system is not allowed. Players are only allowed to roleplay or join gun fights when you are level 2.\n```\n\n' +
+          '**NON RP KILLING MEDIC**\n```\nYou are not allowed to kill a medic while they are saving the injured player.\n```\n\n' +
+          '**TRASHTALKING IN GLOBAL**\n```\nNo toxic policy\nTrashtalking or ooc insult in global or vip chat is not allowed and will be marked as toxicity\n```\n\n' +
+          '**BAN EVADING**\n```\nUsing any account to access our server whilst any of your other accounts have an active ban is not allowed without admin permission.\n```\n\n' +
+          '**HACKING**\n```\nUsing any kind 3rd party software to gain an advantage over other players is prohibited.\n```\n\n' +
+          '**MONEY FARMING**\n```\nCreating new accounts and transferring money between accounts is not allowed.\n```\n\n' +
+          '**REAL WORLD TRADING**\n```\nSelling in-game items/currency for real money is prohibited. Account sales require owner permission.\n```\n\n' +
+          '**SERVER ADVERTISING**\n```\nAdvertising other SAMP servers will result in account ban.\n```\n\n' +
+          '═══════════════════════════════════',
+        footer: { text: 'NEWLIFE ROLEPLAY REVAMPED • Server Rules Part 1' }
+      },
+      {
+        title: '📜 SERVER RULES - PART 2',
+        color: 0xFF6B6B,
+        description: '═══════════════════════════════════\n\n' +
+          '**MULTIPLE ACCOUNTS**\n```\nUsing alternative accounts to avoid punishments is not allowed.\n```\n\n' +
+          '**RUSH TAZING**\n```\nTazing a player while they are aiming/shooting at you is not allowed.\nOther LEOs may taze suspects from behind.\n```\n\n' +
+          '**AVOIDING ADMIN CONFRONTATION**\n```\nLogging off to avoid punishment is not permitted.\n```\n\n' +
+          '**AVOIDING ROLEPLAY**\n```\nYou must comply with roleplay situations. Do not avoid or act unrealistically.\n```\n\n' +
+          '**VEHICLE DEATHMATCH**\n```\nIntentionally using vehicles as weapons is not permitted.\n```\n\n' +
+          '**DEATHMATCHING**\n```\nAttacking/killing players without IC reason is not permitted.\n```\n\n' +
+          '═══════════════════════════════════',
+        footer: { text: 'NEWLIFE ROLEPLAY REVAMPED • Server Rules Part 2' }
+      },
+      {
+        title: '📜 SERVER RULES - PART 3',
+        color: 0xFF6B6B,
+        description: '═══════════════════════════════════\n\n' +
+          '**EXPLOITING**\n```\nAbusing game/script bugs for your advantage is not allowed.\n```\n\n' +
+          '**LOGGING TO AVOID**\n```\nExiting game to avoid death, arrest, or RP situations is prohibited.\n```\n\n' +
+          '**NON RP GUN PULL OUT**\n```\nPulling heavy weapons in public places or abusing RP gun commands is not allowed.\n```\n\n' +
+          '**ABUSE GREENZONE**\n```\nGreenzone rules apply even without system indicators.\n```\n\n' +
+          '**OOC INSULT**\n```\nZero tolerance for toxic behavior and out-of-character insults.\n```\n\n' +
+          '═══════════════════════════════════',
+        footer: { text: 'NEWLIFE ROLEPLAY REVAMPED • Server Rules Part 3' }
+      },
+      {
+        title: '📜 SERVER RULES - PART 4',
+        color: 0xFF6B6B,
+        description: '═══════════════════════════════════\n\n' +
+          '**NON RP MASK/ABUSE**\n```\nMask usage only allowed during illegal RP/robberies.\n```\n\n' +
+          '**HOLDUP IN GREENZONE**\n```\nRobbing players in greenzone is prohibited.\n```\n\n' +
+          '**ILLEGAL MODIFICATIONS**\n```\nModifications giving advantages are not allowed, including bullet tracers.\n```\n\n' +
+          '**LYING TO ADMINISTRATORS**\n```\nHonest responses required for admin inquiries.\n```\n\n' +
+          '**TROLLING**\n```\nExcessive deliberate disruption is not allowed.\n```\n\n' +
+          '**REVENGE KILLING**\n```\nReturning to previous death situations is prohibited.\n```\n\n' +
+          '**RANDOM SHOOTING**\n```\nRandom shooting and heavy weapon use in public places is not allowed.\n```\n\n' +
+          '**RAIDING FACTION/FAMILY HQs**\n```\nRaiding official locations requires admin permission and supervision.\n```\n\n' +
+          '═══════════════════════════════════',
+        footer: { text: 'NEWLIFE ROLEPLAY REVAMPED • Server Rules Part 4' }
+      }
+    ];
+
+    for (const embed of serverRulesEmbeds) {
+      await rulesChannel.send({ embeds: [embed] });
+    }
+    
+    await interaction.reply({ content: `Server rules have been posted in <#${rulesChannel.id}>`, ephemeral: true });
+    return;
+  }
+
+  if (interaction.commandName === 'discordrule') {
+    const rulesChannel = client.channels.cache.get('1260925060248768614');
+    if (!rulesChannel) {
+      return interaction.reply({ content: 'Rules channel not found!', ephemeral: true });
+    }
+
+    const generalRulesEmbed = {
+      title: '📜 GENERAL SERVER RULES',
+      color: 0x7289DA,
+      description: '═══════════════════════════════════\n\n' +
+        '**1️⃣ Be Respectful**\n```\nTreat all members with respect and kindness. Avoid any form of harassment, discrimination, or hate speech. Encourage a positive and inclusive environment for everyone.\n```\n\n' +
+        '**2️⃣ No Spamming or Flooding**\n```\nAvoid excessive or repetitive messaging, sending large amounts of unsolicited content, or flooding the chat with unnecessary messages. Keep discussions relevant and focused.\n```\n\n' +
+        '**3️⃣ Use Appropriate Language**\n```\nKeep the language used in the Discord server appropriate and avoid excessive swearing or offensive language. Be mindful of the diverse audience and maintain a respectful tone.\n```\n\n' +
+        '**4️⃣ No Advertising or Self-Promotion**\n```\nAvoid promoting personal or external content without permission. Respect the server\'s guidelines regarding advertising and self-promotion.\n```\n\n' +
+        '**5️⃣ Respect Privacy**\n```\nDo not share personal information about yourself or others without their consent. Respect the privacy and boundaries of fellow members.\n```\n\n' +
+        '**6️⃣ Follow Channel Guidelines**\n```\nAdhere to the guidelines set for each channel within the Discord server. Stay on topic and use the appropriate channels for specific discussions or content.\n```\n\n' +
+        '**7️⃣ No NSFW Content**\n```\nAvoid sharing or discussing explicit or Not Safe for Work (NSFW) content. Keep the server safe and appropriate for all ages.\n```\n\n' +
+        '**8️⃣ No Trolling or Flame Wars**\n```\nDo not engage in trolling, flame wars, or intentionally provoking arguments. Keep discussions civil and constructive.\n```\n\n' +
+        '**9️⃣ Report Issues**\n```\nIf you encounter any issues or witness a violation of the rules, report it to the server moderators or administrators. Provide necessary details and evidence to assist in resolving the situation.\n```\n\n' +
+        '═══════════════════════════════════',
+      footer: {
+        text: 'NEWLIFE ROLEPLAY REVAMPED • General Guidelines'
+      },
+      timestamp: new Date()
+    };
+
+    const specificRulesEmbed = {
+      title: '🛡️ SPECIFIC SERVER RULES',
+      color: 0xFF6B6B,
+      description: '═══════════════════════════════════\n\n' +
+        '__**RESPECT**__\n```\nALWAYS Be respectful of others in the community. Any forms of toxicity, racism, misogyny etc. will not be tolerated and may result in a ban.\n```\n\n' +
+        '__**INDECENT PROFILE**__\n```\nIt is strictly prohibited to upload any profile and/or server profile photo in our server that is malicious and/or offensive.\n```\n\n' +
+        '__**HACKS**__\n```\nAny user that will be caught using any tools for hacks, bugs, spamming, and glitches will be banned IMMEDIATELY.\n```\n\n' +
+        '__**NSFW CONTENT**__\n```\nNo sharing any pornographic content, especially in #city-gallery and #video-clips.\n```\n\n' +
+        '__**IMPERSONATION**__\n```\nAnyone is not allowed to impersonate any staff members. Any forms of this act will result into permanent ban in discord and in-game.\n```\n\n' +
+        '__**SERVER ADS**__\n```\nAny forms of advertisement to any different discord servers that are not authorized by the Administration is strictly prohibited.\n```\n\n' +
+        '__**MENTION SPAM**__\n```\nWe will be allowing mentions from the Citizens but ONLY if NECESSARY.\n```\n\n' +
+        '__**DISCORD POLICY**__\n```\nBreaking our or Discord\'s ToS or Community Guidelines will result in an immediate irrevocable ban.\n```\n\n' +
+        '═══════════════════════════════════',
+      footer: {
+        text: 'NEWLIFE ROLEPLAY REVAMPED • Specific Guidelines'
+      },
+      timestamp: new Date()
+    };
+
+    await rulesChannel.send({ embeds: [generalRulesEmbed] });
+    await rulesChannel.send({ embeds: [specificRulesEmbed] });
+    await interaction.reply({ content: `Rules have been posted in <#${rulesChannel.id}>`, ephemeral: true });
+    return;
+  }
+
   if (interaction.commandName === 'staff') {
     // Check if command is used in the correct channel
     if (interaction.channelId !== '1363579890141499573') {
@@ -2238,7 +2418,7 @@ Breaking these rules may result in warnings, mutes, kicks, or bans depending on 
     }
 
     const staffEmbed = {
-      title: '👥 ANARCHY REBORN STAFF LIST',
+      title: '👥 NEWLIFE ROLEPLAY REVAMPED STAFF LIST',
       color: 0xFF6B6B,
       fields: [
         {
@@ -2291,7 +2471,7 @@ Breaking these rules may result in warnings, mutes, kicks, or bans depending on 
         url: 'https://cdn.discordapp.com/avatars/1364443184100282369/1981a71da1c567b98d7d921356329161.webp?size=1024'
       },
       footer: {
-        text: 'Anarchy Reborn RP Staff Team'
+        text: 'NEWLIFE ROLEPLAY REVAMPED Staff Team'
       },
       timestamp: new Date()
     };
@@ -2361,7 +2541,7 @@ if (interaction.commandName === 'donation') {
         title: '🚘 GARAGE PRICES',
         color: 0xFF6B6B,
         image: { url: 'https://cdn.discordapp.com/attachments/1364574482345361439/1366278100723433513/Red_White_and_Yellow_Modern_Gaming_Initials_Youtube_Channel_Logo_20250422_204703_0000.png?ex=68105d23&is=680f0ba3&hm=d95ebbe26491064220c2075bcb95e29056b28d36e35ac3954da0e31047044b76&' },
-        footer: { text: 'Contact Property Management for inquiries • Anarchy Roleplay' }
+        footer: { text: 'Contact Property Management for inquiries • NEWLIFE ROLEPLAY REVAMPED' }
       }
     ];
 

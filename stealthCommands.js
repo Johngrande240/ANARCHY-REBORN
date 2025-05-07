@@ -45,7 +45,7 @@ function setupStealthCommands(client) {
     // Random Fun Facts Command
     if (message.content === '!randomfact') {
       const facts = [
-        "Anarchy Reborn started in 2023!",
+        "NEWLIFE ROLEPLAY REVAMPED started in 2024!",
         "Did you know? You can create your own role with !createRole!",
         "The server has a secret boss fight event in development!"
       ];

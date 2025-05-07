@@ -38,7 +38,7 @@ class WelcomeManager {
   getWelcomeEmbed(member) {
     return new EmbedBuilder()
       .setColor(0x00FF00)
-      .setTitle('Welcome to Anarchy Roleplay Reborn! 🎉')
+      .setTitle('Welcome to NEWLIFE ROLEPLAY REVAMPED! 🎉')
       .setDescription(`Welcome ${member} to our amazing community!\n\nEnjoy your stay and make sure to check out our channels!`)
       .addFields(
         { name: '📜 Rules', value: 'Please read our server rules in <#rules>', inline: true },
@@ -46,7 +46,7 @@ class WelcomeManager {
       )
       .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
       .setTimestamp()
-      .setFooter({ text: 'Anarchy Roleplay Reborn', iconURL: member.guild.iconURL() });
+      .setFooter({ text: 'NEWLIFE ROLEPLAY REVAMPED', iconURL: member.guild.iconURL() });
   }
 
   getWelcome(guildId) {
