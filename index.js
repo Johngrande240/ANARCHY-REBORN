@@ -30,9 +30,9 @@ app.listen(3000, '0.0.0.0', () => {
   console.log('Express server is running!');
 });
 
-const token = process.env.DISCORD_TOKEN;
+const token = process.env.NEWLIFE_TOKEN;
 if (!token) {
-  console.error('ERROR: Missing DISCORD_TOKEN environment variable');
+  console.error('ERROR: Missing NEWLIFE_TOKEN environment variable');
   console.error('Please add your bot token in the Secrets tab (Environment variables)');
   process.exit(1);
 }
