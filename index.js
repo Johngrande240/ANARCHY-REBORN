@@ -1,6 +1,6 @@
 require('dotenv').config();
 const express = require('express');
-const { Client, GatewayIntentBits, SlashCommandBuilder, Routes, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, SlashCommandBuilder, Routes, PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, PermissionsBitField } = require('discord.js');
 const { REST } = require('@discordjs/rest');
 const samp = require('samp-query');
 
@@ -32,7 +32,17 @@ app.listen(3000, '0.0.0.0', () => {
 
 const token = process.env.DISCORD_TOKEN;
 if (!token) {
-  console.error('Missing DISCORD_TOKEN environment variable');
+  console.error('ERROR: Missing DISCORD_TOKEN environment variable');
+  console.error('Please add your bot token in the Secrets tab (Environment variables)');
+  process.exit(1);
+}
+
+// Validate token format
+if (!token || !/^[A-Za-z0-9_-]{24,}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27}$/.test(token)) {
+  console.error('ERROR: Invalid Discord token format');
+  console.error('Token length:', token ? token.length : 0);
+  console.error('Please check your token in the Secrets tab');
+  console.error('Make sure there are no spaces before or after the token');
   process.exit(1);
 }
 
@@ -148,7 +158,7 @@ setInterval(() => {
       spamMap.set(key, oldMessages);
     }
   }
-  
+
   // Cleanup warnings older than 24 hours
   for (const [key, warning] of userWarnings.entries()) {
     if (now - warning.timestamp > 86400000) {
@@ -186,7 +196,46 @@ function hasRequiredPermissions(member, permissions) {
   if (!member) return false;
   if (member.id === member.guild.ownerId) return true;
   return member.permissions.has(permissions);
+
 }
+
+client.on('guildMemberUpdate', async (oldMember, newMember) => {
+  // Check if the member has boosted the server
+  if (!oldMember.premiumSince && newMember.premiumSince) {
+    // Define the booster channel ID
+    const boosterChannelId = '1368586038796091493';
+
+    // Fetch the channel
+    const boosterChannel = newMember.guild.channels.cache.get(boosterChannelId);
+    if (!boosterChannel) {
+      console.error('Booster channel not found!');
+      return;
+    }
+
+    // Create a stylish embed message for booster notification
+    const boosterEmbed = {
+      title: '✨ Server Boost Alert ✨',
+      description: `${newMember.user} has boosted the server! Thank you for your support! 💖`,
+      color: 0xFFD700, // Gold color
+      thumbnail: {
+        url: newMember.user.displayAvatarURL({ dynamic: true }),
+      },
+      fields: [
+        { name: 'Total Boosts', value: `${newMember.guild.premiumSubscriptionCount} boosts`, inline: true },
+        { name: 'Boost Tier', value: `Level ${newMember.guild.premiumTier}`, inline: true },
+      ],
+      footer: {
+        text: 'Boost our server and help us grow!',
+        icon_url: 'https://path/to/aesthetic/icon.png', // Replace with an actual URL icon if available
+      },
+      timestamp: new Date(),
+    };
+
+    // Send the embed message to the channel
+    await boosterChannel.send({ embeds: [boosterEmbed] });
+  }
+});
+
 
 // Command rate limiting
 function isRateLimited(userId, commandName) {
@@ -246,9 +295,22 @@ const roleManager = require('./roleManager');
 const { setupStealthCommands } = require('./stealthCommands');
 const { getWarnings, addWarning, handlePenalties } = require('./warningManager');
 
-const { handleAIChat, toggleBloodMode } = require('./aiHandler.js');
+const {
+  handleAIChat,
+  toggleBloodMode,
+  initializeTicketHandlers,
+  handleTicketSetup,
+  handleTicketCreate,
+  handleTicketCategory,
+  handleTicketClose,
+  handleConfirmClose
+} = require('./aiHandler.js');
 
 const commands = [
+// Register the /updates command
+new SlashCommandBuilder()
+  .setName('updates')
+  .setDescription('Send bot updates to the channel'),
   new SlashCommandBuilder()
     .setName('serverrule')
     .setDescription('Display the SA:MP server rules'),
@@ -718,21 +780,58 @@ const commands = [
     .setName('suspicious')
     .setDescription('List suspicious accounts'),
   new SlashCommandBuilder()
+    .setName('setup')
+    .setDescription('Setup the ticket system'),
+  new SlashCommandBuilder()
     .setName('ticket')
-    .setDescription('Creates a new ticket')
-    .addStringOption(option =>
-      option.setName('reason')
-        .setDescription('Reason for the ticket')
-        .setRequired(true)),
-  new SlashCommandBuilder()
-    .setName('closeticket')
-    .setDescription('Closes the current ticket'),
-  new SlashCommandBuilder()
-    .setName('listtickets')
-    .setDescription('Lists all open tickets'),
+    .setDescription('Ticket system commands')
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('add')
+        .setDescription('Add a user to the ticket')
+        .addUserOption(option =>
+          option.setName('user')
+            .setDescription('User to add')
+            .setRequired(true)))
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('remove')
+        .setDescription('Remove a user from the ticket')
+        .addUserOption(option =>
+          option.setName('user')
+            .setDescription('User to remove')
+            .setRequired(true)))
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('close')
+        .setDescription('Close the ticket'))
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('claim')
+        .setDescription('Claim the ticket'))
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('priority')
+        .setDescription('Set ticket priority')
+        .addStringOption(option =>
+          option.setName('level')
+            .setDescription('Priority level')
+            .setRequired(true)
+            .addChoices(
+              { name: 'Low', value: 'low' },
+              { name: 'Medium', value: 'medium' },
+              { name: 'High', value: 'high' }
+            ))),
   new SlashCommandBuilder()
     .setName('serverstatus')
-    .setDescription('Gets the SA:MP server status')
+    .setDescription('Gets the SA:MP server status'),
+  new SlashCommandBuilder()
+    .setName('appreciation')
+    .setDescription('Send a heartwarming thanks to a server donor')
+    .addUserOption(option =>
+      option.setName('user')
+        .setDescription('The user to appreciate')
+        .setRequired(true))
 ].map(command => command.toJSON());
 
 const rest = new REST({ version: '10' }).setToken(token);
@@ -791,13 +890,44 @@ function updatePlayingMessage() {
 
 const { sendFeatureUpdate } = require('./featureUpdate');
 
-client.once('ready', () => {
+// Enhanced error handling
+process.on('unhandledRejection', error => {
+  console.error('Unhandled promise rejection:', error);
+});
+
+client.on('error', error => {
+  console.error('Discord client error:', error);
+});
+
+client.on('disconnect', () => {
+  console.warn('Bot disconnected from Discord! Attempting to reconnect...');
+  client.login(token).catch(err => {
+    console.error('Failed to reconnect:', err);
+  });
+});
+
+client.once('ready', async () => {
   console.log(`Bot is online as ${client.user.tag}`);
-  setupStealthCommands(client);
-  updatePlayingMessage(); // Set initial message
-  setInterval(updatePlayingMessage, 10000); // Update every 10 seconds
-  sendFeatureUpdate(client); // Send feature update
-  Logger.logToChannel(client, `✅ Bot has started as **${client.user.tag}**`);
+  console.log('Connected to Discord gateway!');
+
+  try {
+    // Initialize ticket handlers first
+    initializeTicketHandlers(client);
+    setupStealthCommands(client);
+
+    await client.user.setPresence({
+      activities: [{ name: 'Chilling in NEWLIFE ROLEPLAY', type: ActivityType.Playing }],
+      status: 'idle'
+    });
+
+    // Set up status rotation
+    setInterval(updatePlayingMessage, 60000); // Change status every minute
+
+    sendFeatureUpdate(client); // Send feature update
+    Logger.logToChannel(client, `✅ Bot has started as **${client.user.tag}**`);
+  } catch (error) {
+    console.error('Error during bot initialization:', error);
+  }
 });
 
 // Welcome message handler
@@ -818,12 +948,11 @@ client.on('guildMemberAdd', async member => {
       timestamp: new Date()
     };
     await welcomeChannel.send({ embeds: [welcomeEmbed] });
-  }
+    }
 });
 
 // Leave message handler
-client.on('guildMemberRemove', async member => {
-  const leaveChannel = client.channels.cache.get('1369636228147974144');
+client.on('guildMemberRemove', async member => {  const leaveChannel = client.channels.cache.get('1369636228147974144');
   if (leaveChannel) {
     const leaveEmbed = {
       title: '👋 Member Left',
@@ -1294,7 +1423,7 @@ client.once('ready', () => {
         },
         timestamp: new Date()
       };
-      
+
       await boostChannel.send({ embeds: [boostEmbed] });
     }, 10000); // 10000 milliseconds = 10 seconds
   }
@@ -1302,6 +1431,49 @@ client.once('ready', () => {
 
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
+
+// Handle the /updates command
+if (interaction.commandName === 'updates') {
+  const updatesChannel = client.channels.cache.get('1368569810220220518');
+  if (!updatesChannel) {
+    return interaction.reply({ content: 'Updates channel not found!', ephemeral: true });
+  }
+
+  const updatesEmbed = new EmbedBuilder()
+    .setTitle('📢 Bot Features & Updates')
+    .setColor(0xFFA500)
+    .setDescription([
+      'Here are all the awesome features of our bot:',
+      '',
+      '🛡️ **Security Features:**',
+      '• Anti-Spam Protection',
+      '• Anti-Raid System',
+      '• IP Security',
+      '',
+      '🎮 **Economy System:**',
+      '• Daily Rewards',
+      '• Balance Checking',
+      '',
+      '👮 **Moderation Tools:**',
+      '• Ban/Kick Commands',
+      '• Mute/Unmute System',
+      '',
+      '🎫 **Ticket System:**',
+      '• Create Tickets',
+      '• Close Tickets',
+      '',
+      '🔄 **24/7 Uptime Monitoring**',
+      '• Constant Server Availability',
+      '',
+      '🆕 **Dynamic Playing Messages**',
+      '• The bot now updates its playing status every few minutes!',
+    ].join('\n'))
+    .setFooter({ text: 'NEWLIFE ROLEPLAY REVAMPED' })
+    .setTimestamp();
+
+  await updatesChannel.send({ embeds: [updatesEmbed] });
+  await interaction.reply({ content: 'Updates have been sent!', ephemeral: true });
+}
 
   if (interaction.commandName === 'serverup') {
     if (!interaction.memberPermissions.has('ADMINISTRATOR')) {
@@ -1422,81 +1594,82 @@ client.on('interactionCreate', async interaction => {
     }
   }
 
-  if (interaction.commandName === 'ticket') {
-    const reason = interaction.options.getString('reason');
+  // Ticket system handlers
+  if (interaction.commandName === 'setup') {
+    try {
+      await handleTicketSetup(interaction);
+    } catch (error) {
+      console.error('Error handling ticket setup:', error);
+      await interaction.reply({ content: 'An error occurred while setting up the ticket system.', ephemeral: true });
+    }
+    return;
+  }
 
-    // Create a new channel for the ticket
-    const ticketChannel = await interaction.guild.channels.create({
-      name: `ticket-${interaction.user.username}`,
-      type: 0, // Text channel
-      permissionOverwrites: [
-        {
-          id: interaction.guild.id, // @everyone role
-          deny: ['ViewChannel'],
-        },
-        {
-          id: interaction.user.id,
-          allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory'],
-        },
-        {
-          id: interaction.guild.roles.cache.find(role => role.name === 'Staff')?.id || interaction.guild.id,
-          allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory'],
+  // Handle button interactions
+  if (interaction.isButton()) {
+    try {
+      if (interaction.customId === 'create_ticket') {
+        await handleTicketCreate(interaction);
+      } else if (interaction.customId === 'close_ticket') {
+        await handleTicketClose(interaction);
+      } else if (interaction.customId === 'confirm_close') {
+        await handleConfirmClose(interaction);
+      } else if (interaction.customId === 'cancel_close') {
+        await interaction.update({
+          content: 'Ticket close cancelled.',
+          components: [],
+          embeds: []
+        }).catch(error => {
+          console.error('Error updating ticket close cancel:', error);
+        });
+      }
+    } catch (error) {
+      console.error('Error handling button interaction:', error);
+      try {
+        if (!interaction.replied && !interaction.deferred) {
+          await interaction.reply({ 
+            content: 'An error occurred while processing your request.', 
+            ephemeral: true 
+          }).catch(e => console.error('Error sending error message:', e));
+        } else if (interaction.deferred) {
+          await interaction.editReply({ 
+            content: 'An error occurred while processing your request.' 
+          }).catch(e => console.error('Error editing error message:', e));
         }
-      ]
-    });
-
-    // Send initial message in ticket channel
-    await ticketChannel.send({
-      embeds: [{
-        title: '🎫 New Ticket',
-        description: `Ticket created by ${interaction.user}\nReason: ${reason}`,
-        color: 0x00ff00
-      }]
-    });
-
-    await interaction.reply({
-      content: `Ticket created! Check ${ticketChannel}`,
-      ephemeral: true
-    });
+      } catch (followUpError) {
+        console.error('Error handling button interaction followup:', followUpError);
+      }
+    }
+    return;
   }
 
-  if (interaction.commandName === 'closeticket') {
-    if (!interaction.channel.name.startsWith('ticket-')) {
-      return interaction.reply({
-        content: 'This command can only be used in ticket channels!',
-        ephemeral: true
-      });
+  // Handle select menu interactions
+  if (interaction.isStringSelectMenu()) {
+    try {
+      if (interaction.customId === 'ticket_category') {
+        // Acknowledge the interaction immediately to prevent timeout
+        if (!interaction.deferred && !interaction.replied) {
+          await interaction.deferReply({ ephemeral: true }).catch(error => {
+            console.error('Error deferring reply:', error);
+          });
+        }
+
+        // Process ticket creation
+        await handleTicketCategory(interaction);
+      }
+    } catch (error) {
+      console.error('Error handling select menu interaction:', error);
+      try {
+        if (!interaction.replied && !interaction.deferred) {
+          await interaction.reply({ content: 'An error occurred while processing your request.', ephemeral: true });
+        } else {
+          await interaction.followUp({ content: 'An error occurred while processing your request.', ephemeral: true }).catch(console.error);
+        }
+      } catch (followUpError) {
+        console.error('Error handling select menu followup:', followUpError);
+      }
     }
-
-    await interaction.reply('Closing ticket in 5 seconds...');
-    setTimeout(async () => {
-      await interaction.channel.delete();
-    }, 5000);
-  }
-
-  if (interaction.commandName === 'listtickets') {
-    const tickets = interaction.guild.channels.cache
-      .filter(channel => channel.name.startsWith('ticket-'));
-
-    if (tickets.size === 0) {
-      return interaction.reply({
-        content: 'There are no open tickets!',
-        ephemeral: true
-      });
-    }
-
-    const ticketList = tickets.map(channel => 
-      `${channel.name} (Created by: ${channel.name.split('-')[1]})`
-    ).join('\n');
-
-    await interaction.reply({
-      embeds: [{
-        title: '🎫 Open Tickets',
-        description: ticketList,
-        color: 0x00ff00
-      }],
-      ephemeral: true
-    });
+    return;
   }
 
   if (interaction.commandName === 'kick') {
@@ -1639,928 +1812,146 @@ Breaking these rules may result in warnings, mutes, kicks, or bans depending on 
           await interaction.reply(`Updated ${setting} to ${value}`);
         } catch (error) {
           console.error('Failed to save security config:', error);
-          await interaction.reply('Updated setting in memory, but failed to persist changes.');
+          await interaction.reply({ 
+            embeds: [{
+              title: 'Error',
+              description: 'Failed to save security configuration',
+              color: 0xFF0000
+            }]
+          });
         }
       } else {
-        await interaction.reply('Invalid setting specified');
-      }
-    } else {
-      await interaction.reply({
-        embeds: [{
-          title: '⚙️ Security Configuration',
-          fields: [
-            { name: 'Spam Settings', value: `Threshold: ${SECURITY_CONFIG.spam.threshold}\nTime Window: ${SECURITY_CONFIG.spam.timeWindow}ms`, inline: true },
-            { name: 'Raid Settings', value: `Threshold: ${SECURITY_CONFIG.raid.threshold}\nAccount Age Check: ${SECURITY_CONFIG.raid.accountAgeThreshold}ms`, inline: true }
-          ],
-          color: 0x0099FF
-        }]
-      });
-    }
-  }
-
-  if (interaction.commandName === 'play' || 
-      interaction.commandName === 'skip' || 
-      interaction.commandName === 'stop' || 
-      interaction.commandName === 'queue') {
-    await interaction.reply({ 
-      content: '❌ Music commands are currently disabled.',
-      ephemeral: true 
-    });
-  }
-
-  if (interaction.commandName === 'filter') {
-    const queue = player.nodes.get(interaction.guildId);
-    if (!queue || !queue.isPlaying()) {
-      return interaction.reply({ content: '❌ No music is being played!', ephemeral: true });
-    }
-
-    const filter = interaction.options.getString('name');
-    if (!audioFilters[filter]) {
-      return interaction.reply({ content: '❌ Invalid filter!', ephemeral: true });
-    }
-
-    try {
-      await queue.filters.ffmpeg.toggle([filter]);
-      interaction.reply({
-        embeds: [{
-          title: '🎛️ Filter Applied',
-          description: `Applied filter: **${filter}**`,
-          color: 0x00FF00
-        }]
-      });
-    } catch (error) {
-      interaction.reply({ content: '❌ Error applying filter!', ephemeral: true });
-    }
-  }
-
-  if (interaction.commandName === 'admin') {
-    // Strict security check - only allow specific user ID
-    if (interaction.user.id !== '1191627654386950214') {
-      Logger.logSecurity(interaction.guild, 'unauthorized_admin_access', {
-        user: interaction.user.tag,
-        command: interaction.commandName
-      });
-      return interaction.reply({ 
-        content: 'Access denied. This incident has been logged.', 
-        ephemeral: true 
-      });
-    }
-
-    // Rate limiting for admin commands
-    const now = Date.now();
-    const key = `admin-${interaction.user.id}`;
-    const cooldown = commandCooldowns.get(key);
-
-    if (cooldown && (now - cooldown) < 30000) { // 30 second cooldown
-      return interaction.reply({ 
-        content: 'Please wait before using admin commands again.', 
-        ephemeral: true 
-      });
-    }
-    commandCooldowns.set(key, now);
-
-    const subcommand = interaction.options.getSubcommand();
-    const group = interaction.options.getSubcommandGroup();
-
-    if (group === 'security' && subcommand === 'toggle') {
-      const feature = interaction.options.getString('feature');
-      const enabled = interaction.options.getBoolean('enabled');
-
-      // Update security configuration
-      switch (feature) {
-        case 'spam':
-          SECURITY_CONFIG.spam.enabled = enabled;
-          break;
-        case 'raid':
-          SECURITY_CONFIG.raid.enabled = enabled;
-          break;
-        case 'verification':
-          SECURITY_CONFIG.verification.enabled = enabled;
-          break;
-        case 'automod':
-          SECURITY_CONFIG.automod.enabled = enabled;
-          break;
-        case 'nsfw':
-          SECURITY_CONFIG.nsfw.enabled = enabled;
-          break;
-      }
-
-      // Save configuration
-      try {
-        fs.writeFileSync('security-config.json', JSON.stringify(SECURITY_CONFIG, null, 2));
         await interaction.reply({
           embeds: [{
-            title: '✅ Security Feature Updated',
-            description: `${feature} has been ${enabled ? 'enabled' : 'disabled'}`,
-            color: enabled ? 0x00FF00 : 0xFF0000,
-            fields: [
-              { name: 'Feature', value: feature, inline: true },
-              { name: 'Status', value: enabled ? 'Enabled' : 'Disabled', inline: true }
-            ]
+            title: 'Security Configuration',
+            description: '```json\n' + JSON.stringify(SECURITY_CONFIG, null, 2) + '\n```',
+            color: 0x00FF00
           }]
         });
-      } catch (error) {
-        console.error('Failed to save security config:', error);
-        await interaction.reply({ 
-          content: 'Failed to update security configuration!', 
-          ephemeral: true 
-        });
       }
+    }
+    }
+
+    if (interaction.commandName === 'serverrule') {
+      const rulesChannel = client.channels.cache.get('1260925060248768614');
+      if (!rulesChannel) {
+        return interaction.reply({ content: 'Rules channel not found!', ephemeral: true });
+      }
+
+      const serverRulesEmbeds = [
+        {
+          title: '📜 SERVER RULES - PART 1',
+          color: 0xFF6B6B,
+          description: '═══════════════════════════════════\n\n' +
+            '**COMBAT LOGGING**\n```\nWhen you got shot, you are not allowed to /q or disconnect for 10 minutes in a middle of RP situation(pvp).\n```\n\n' +
+            '**SAFEZONE VIOLATION**\n```\nRobbery, Kidnapping, holding someone hostage or killing in safezone is strictly prohibited.\n```\n\n' +
+            '**NON RP KILL OF VEHICLE DRIVER WHILE MOVING**\n```\nKilling the vehicle while moving is not allowed.\nException: When the vehicle is in a car chase with police.\n```\n\n' +
+            '**META GAMING**\n```\nUsing Out-of-Character information in an In-Character context is prohibited.\n```\n\n' +
+            '**POWER GAMING**\n```\nAbusing unrealistic RP abilities or forcing others into RP situations unfairly is prohibited.\n```\n\n' +
+            '**BLACK MAILING INJURED PLAYER**\n```\nForcing the medic to not heal the injured player is considered as force rp and finishing the player will be considered a non rp finish.\n```\n\n' +
+            '**TRASHTALKING THE INJURED PLAYER**\n```\nNo toxic policy\nTrashtalking the injured player or using animation on the injured player is strictly not allowed.\n```\n\n' +
+            '**ABUSE NEWB SYSTEM**\n```\nAbusing the newbie system is not allowed. Players are only allowed to roleplay or join gun fights when you are level 2.\n```\n\n' +
+            '**NON RP KILLING MEDIC**\n```\nYou are not allowed to kill a medic while they are saving the injured player.\n```\n\n' +
+            '**TRASHTALKING IN GLOBAL**\n```\nNo toxic policy\nTrashtalking or ooc insult in global or vip chat is not allowed and will be marked as toxicity\n```\n\n' +
+            '**BAN EVADING**\n```\nUsing any account to access our server whilst any of your other accounts have an active ban is not allowed without admin permission.\n```\n\n' +
+            '**HACKING**\n```\nUsing any kind 3rd party software to gain an advantage over other players is prohibited.\n```\n\n' +
+            '**MONEY FARMING**\n```\nCreating new accounts and transferring money between accounts is not allowed.\n```\n\n' +
+            '**REAL WORLD TRADING**\n```\nSelling in-game items/currency for real money is prohibited. Account sales require owner permission.\n```\n\n' +
+            '**SERVER ADVERTISING**\n```\nAdvertising other SAMP servers will result in account ban.\n```\n\n' +
+            '═══════════════════════════════════',
+          footer: { text: 'NEWLIFE ROLEPLAY REVAMPED • Server Rules Part 1' }
+        },
+        {
+          title: '📜 SERVER RULES - PART 2',
+          color: 0xFF6B6B,
+          description: '═══════════════════════════════════\n\n' +
+            '**MULTIPLE ACCOUNTS**\n```\nUsing alternative accounts to avoid punishments is not allowed.\n```\n\n' +
+            '**RUSH TAZING**\n```\nTazing a player while they are aiming/shooting at you is not allowed.\nOther LEOs may taze suspects from behind.\n```\n\n' +
+            '**AVOIDING ADMIN CONFRONTATION**\n```\nLogging off to avoid punishment is not permitted.\n```\n\n' +
+            '**AVOIDING ROLEPLAY**\n```\nYou must comply with roleplay situations. Do not avoid or act unrealistically.\n```\n\n' +
+            '**VEHICLE DEATHMATCH**\n```\nIntentionally using vehicles as weapons is not permitted.\n```\n\n' +
+            '**DEATHMATCHING**\n```\nAttacking/killing players without IC reason is not permitted.\n```\n\n' +
+            '═══════════════════════════════════',
+          footer: { text: 'NEWLIFE ROLEPLAY REVAMPED • Server Rules Part 2' }
+        },
+        {
+          title: '📜 SERVER RULES - PART 3',
+          color: 0xFF6B6B,
+          description: '═══════════════════════════════════\n\n' +
+            '**EXPLOITING**\n```\nAbusing game/script bugs for your advantage is not allowed.\n```\n\n' +
+            '**LOGGING TO AVOID**\n```\nExiting game to avoid death, arrest, or RP situations is prohibited.\n```\n\n' +
+            '**NON RP GUN PULL OUT**\n```\nPulling heavy weapons in public places or abusing RP gun commands is not allowed.\n```\n\n' +
+            '**ABUSE GREENZONE**\n```\nGreenzone rules apply even without system indicators.\n```\n\n' +
+            '**OOC INSULT**\n```\nZero tolerance for toxic behavior and out-of-character insults.\n```\n\n' +
+            '═══════════════════════════════════',
+          footer: { text: 'NEWLIFE ROLEPLAY REVAMPED • Server Rules Part 3' }
+        },
+        {
+          title: '📜 SERVER RULES - PART 4',
+          color: 0xFF6B6B,
+          description: '═══════════════════════════════════\n\n' +
+            '**NON RP MASK/ABUSE**\n```\nMask usage only allowed during illegal RP/robberies.\n```\n\n' +
+            '**HOLDUP IN GREENZONE**\n```\nRobbing players in greenzone is prohibited.\n```\n\n' +
+            '**ILLEGAL MODIFICATIONS**\n```\nModifications giving advantages are not allowed, including bullet tracers.\n```\n\n' +
+            '**LYING TO ADMINISTRATORS**\n```\nHonest responses required for admin inquiries.\n```\n\n' +
+            '**TROLLING**\n```\nExcessive deliberate disruption is not allowed.\n```\n\n' +
+            '**REVENGE KILLING**\n```\nReturning to previous death situations is prohibited.\n```\n\n' +
+            '**RANDOM SHOOTING**\n```\nRandom shooting and heavy weapon use in public places is not allowed.\n```\n\n' +
+            '**RAIDING FACTION/FAMILY HQs**\n```\nRaiding official locations requires admin permission and supervision.\n```\n\n' +
+            '═══════════════════════════════════',
+          footer: { text: 'NEWLIFE ROLEPLAY REVAMPED • Server Rules Part 4' }
+        }
+      ];
+
+      for (const embed of serverRulesEmbeds) {
+        await rulesChannel.send({ embeds: [embed] });
+      }
+
+      await interaction.reply({ content: `Server rules have been posted in <#${rulesChannel.id}>`, ephemeral: true });
       return;
     }
 
-    if (group === 'nsfw') {
-      const action = interaction.options.getString('action');
-      const muteDuration = interaction.options.getInteger('muteduration') || 60;
+    if (interaction.commandName === 'discordrule') {
+      const rulesChannel = client.channels.cache.get('1260925060248768614');
+      if (!rulesChannel) {
+        return interaction.reply({ content: 'Rules channel not found!', ephemeral: true });
+      }
 
-      SECURITY_CONFIG.nsfw = {
-        action: action,
-        muteDuration: muteDuration * 60000
+      const generalRulesEmbed = {
+        title: '📜 GENERAL SERVER RULES',
+        color: 0x7289DA,
+        description: '═══════════════════════════════════\n\n' +
+          '**1️⃣ Be Respectful**\n```\nTreat all members with respect and kindness. Avoid any form of harassment, discrimination, or hate speech. Encourage a positive and inclusive environment for everyone.\n```\n\n' +
+          '**2️⃣ No Spamming or Flooding**\n```\nAvoid excessive or repetitive messaging, sending large amounts of unsolicited content, or flooding the chat with unnecessary messages. Keep discussions relevant and focused.\n```\n\n' +
+          '**3️⃣ Use Appropriate Language**\n```\nKeep the language used in the Discord server appropriate and avoid excessive swearing or offensive language. Be mindful of the diverse audience and maintain a respectful tone.\n```\n\n' +
+          '**4️⃣ No Advertising or Self-Promotion**\n```\nAvoid promoting personal or external content without permission. Respect the server\'s guidelines regarding advertising and self-promotion.\n```\n\n' +
+          '**5️⃣ Respect Privacy**\n```\nDo not share personal information about yourself or others without their consent. Respect the privacy and boundaries of fellow members.\n```\n\n' +
+          '**6️⃣ Follow Channel Guidelines**\n```\nAdhere to the guidelines set for each channel within the Discord server. Stay on topic and use the appropriate channels for specific discussions or content.\n```\n\n' +
+          '**7️⃣ No NSFW Content**\n```\nAvoid sharing or discussing explicit or Not Safe for Work (NSFW) content. Keep the server safe and appropriate for all ages.\n```\n\n' +
+          '**8️⃣ No Trolling or Flame Wars**\n```\nDo not engage in trolling, flame wars, or intentionally provoking arguments. Keep discussions civil and constructive.\n```\n\n' +
+          '**9️⃣ Report Issues**\n```\nIf you encounter any issues or witness a violation of the rules, report it to the server moderators or administrators. Provide necessary details and evidence to assist in resolving the situation.\n```\n\n' +
+          '═══════════════════════════════════',
+        footer: {
+          text: 'NEWLIFE ROLEPLAY REVAMPED • General Guidelines'
+        },
+        timestamp: new Date()
       };
 
-      await interaction.reply({
-        embeds: [{
-          title: '✅ NSFW Content Settings Updated',
-          fields: [
-            { name: 'Action', value: action.toUpperCase(), inline: true },
-            { name: 'Mute Duration', value: `${muteDuration} minutes`, inline: true }
-          ],
-          color: 0x00FF00
-        }]
-      });
-    } else if (group === 'nuke') {
-      const banthreshold = interaction.options.getInteger('banthreshold');
-      const channelthreshold = interaction.options.getInteger('channelthreshold');
-      const rolethreshold = interaction.options.getInteger('rolethreshold');
-      const timewindow = interaction.options.getInteger('timewindow');
-
-      if (banthreshold) NUKE_THRESHOLD.bans = banthreshold;
-      if (channelthreshold) NUKE_THRESHOLD.channelDeletions = channelthreshold;
-      if (rolethreshold) NUKE_THRESHOLD.roleDeletions = rolethreshold;
-      if (timewindow) NUKE_THRESHOLD.timeWindow = timewindow * 1000;
-
-      await interaction.reply({
-        embeds: [{
-          title: '✅ Anti-Nuke Settings Updated',
-          fields: [
-            { name: 'Ban Threshold', value: String(NUKE_THRESHOLD.bans), inline: true },
-            { name: 'Channel Deletion Threshold', value: String(NUKE_THRESHOLD.channelDeletions), inline: true },
-            { name: 'Role Deletion Threshold', value: String(NUKE_THRESHOLD.roleDeletions), inline: true },
-            { name: 'Time Window', value: `${NUKE_THRESHOLD.timeWindow/1000}s`, inline: true }
-          ],
-          color: 0x00FF00
-        }]
-      });
-    } else if (group === 'security') {
-      try {
-        switch (subcommand) {
-          case 'toggle': {
-            const feature = interaction.options.getString('feature');
-            const enabled = interaction.options.getBoolean('enabled');
-            SECURITY_CONFIG[feature].enabled = enabled;
-            await interaction.reply({
-              embeds: [{
-                title: '✅ Security Feature Updated',
-                description: `${feature} has been ${enabled ? 'enabled' : 'disabled'}`,
-                color: enabled ? 0x00FF00 : 0xFF0000
-              }]
-            });
-            break;
-          }
-
-          case 'spam': {
-            const threshold = interaction.options.getInteger('threshold');
-            const timeWindow = interaction.options.getInteger('timewindow');
-            const muteDuration = interaction.options.getInteger('muteduration');
-
-            if (threshold) SECURITY_CONFIG.spam.threshold = threshold;
-            if (timeWindow) SECURITY_CONFIG.spam.timeWindow = timeWindow * 1000;
-            if (muteDuration) SECURITY_CONFIG.spam.muteDuration = muteDuration * 60000;
-
-            await interaction.reply({
-              embeds: [{
-                title: '✅ Anti-Spam Settings Updated',
-                fields: [
-                  { name: 'Threshold', value: String(SECURITY_CONFIG.spam.threshold), inline: true },
-                  { name: 'Time Window', value: `${SECURITY_CONFIG.spam.timeWindow/1000}s`, inline: true },
-                  { name: 'Mute Duration', value: `${SECURITY_CONFIG.spam.muteDuration/60000}m`, inline: true }
-                ],
-                color: 0x00FF00
-              }]
-            });
-            break;
-          }
-
-          case 'raid': {
-            const threshold = interaction.options.getInteger('threshold');
-            const action = interaction.options.getString('action');
-
-            if (threshold) SECURITY_CONFIG.raid.threshold = threshold;
-            if (action) SECURITY_CONFIG.raid.actionType = action;
-
-            await interaction.reply({
-              embeds: [{
-                title: '✅ Anti-Raid Settings Updated',
-                fields: [
-                  { name: 'Threshold', value: String(SECURITY_CONFIG.raid.threshold), inline: true },
-                  { name: 'Action', value: SECURITY_CONFIG.raid.actionType, inline: true }
-                ],
-                color: 0x00FF00
-              }]
-            });
-            break;
-          }
-
-          case 'verification': {
-            const accountAge = interaction.options.getInteger('accountage');
-            const role = interaction.options.getRole('role');
-
-            if (accountAge) SECURITY_CONFIG.verification.accountAgeDays = accountAge;
-            if (role) SECURITY_CONFIG.verification.requiredRole = role.name;
-
-            await interaction.reply({
-              embeds: [{
-                title: '✅ Verification Settings Updated',
-                fields: [
-                  { name: 'Required Account Age', value: `${SECURITY_CONFIG.verification.accountAgeDays} days`, inline: true },
-                  { name: 'Verification Role', value: SECURITY_CONFIG.verification.requiredRole, inline: true }
-                ],
-                color: 0x00FF00
-              }]
-            });
-            break;
-          }
-
-          case 'nsfw': {
-            const action = interaction.options.getString('action');
-            const muteDuration = interaction.options.getInteger('muteduration') || 60;
-
-            SECURITY_CONFIG.nsfw = {
-              action: action,
-              muteDuration: muteDuration * 60000 // Convert to milliseconds
-            };
-
-            await interaction.reply({
-              embeds: [{
-                title: '✅ NSFW Content Settings Updated',
-                fields: [
-                  { name: 'Action', value: action.toUpperCase(), inline: true },
-                  { name: 'Mute Duration', value: `${muteDuration} minutes`, inline: true }
-                ],
-                color: 0x00FF00
-              }]
-            });
-            break;
-          }
-
-          case 'automod': {
-            const maxMentions = interaction.options.getInteger('maxmentions');
-            const maxEmojis = interaction.options.getInteger('maxemojis');
-            const bannedWords = interaction.options.getString('bannedwords');
-
-            if (maxMentions) SECURITY_CONFIG.spam.maxMentions = maxMentions;
-            if (maxEmojis) SECURITY_CONFIG.spam.maxEmojis = maxEmojis;
-            if (bannedWords) SECURITY_CONFIG.automod.bannedWords = bannedWords.split(',').map(word => word.trim());
-
-            await interaction.reply({
-              embeds: [{
-                title: '✅ Auto-Moderation Settings Updated',
-                fields: [
-                  { name: 'Max Mentions', value: String(SECURITY_CONFIG.spam.maxMentions), inline: true },
-                  { name: 'Max Emojis', value: String(SECURITY_CONFIG.spam.maxEmojis), inline: true },
-                  { name: 'Banned Words', value: SECURITY_CONFIG.automod.bannedWords.join(', ') || 'None' }
-                ],
-                color: 0x00FF00
-              }]
-            });
-            break;
-          }
-        }
-
-        // Save configuration after any changes
-        const fs = require('fs');
-        fs.writeFileSync('security-config.json', JSON.stringify(SECURITY_CONFIG, null, 2));
-      } catch (error) {
-        console.error('Failed to update security settings:', error);
-        await interaction.reply({ content: 'Failed to update security settings!', ephemeral: true });
-      }
-    }
-    return;
-  }
-
-  if (interaction.commandName === 'suspicious') {
-    // Ensure we have member permissions before checking
-    if (!interaction.memberPermissions.has('MANAGE_GUILD')) {
-      return interaction.reply({ content: 'You need Manage Server permissions to use this command.', ephemeral: true });
-    }
-
-    const suspiciousList = Array.from(suspiciousAccounts).map(async id => {
-      try {
-        const member = await interaction.guild.members.fetch(id);
-        return `${member.user.tag} (Age: ${Math.floor((Date.now() - member.user.createdTimestamp) / (1000 * 60 * 60 * 24))} days)`;
-      } catch {
-        return `Unknown Member (${id})`;
-      }
-    });
-
-    Promise.all(suspiciousList).then(async list => {
-      await interaction.reply({
-        embeds: [{
-          title: '⚠️ Suspicious Accounts',
-          description: list.length > 0 ? list.join('\n') : 'No suspicious accounts found',
-          color: 0xFF9900
-        }]
-      });
-    });
-  }
-
-  if (interaction.commandName === 'clear') {
-    // Ensure we have member permissions before checking
-    if (!interaction.memberPermissions.has('MANAGE_MESSAGES')) {
-      return interaction.reply({ content: 'You need Manage Messages permission!', ephemeral: true });
-    }
-
-    const amount = interaction.options.getInteger('amount');
-    if (amount < 1 || amount > 100) {
-      return interaction.reply({ content: 'You can delete 1-100 messages.', ephemeral: true });
-    }
-
-    try {
-      await interaction.channel.bulkDelete(amount);
-      await interaction.reply({ content: `Deleted ${amount} messages.`, ephemeral: true });
-    } catch (error) {
-      await interaction.reply({ content: 'Error deleting messages!', ephemeral: true });
-    }
-  }
-
-  if (interaction.commandName === 'warn') {
-    // Ensure we have member permissions before checking
-    if (!interaction.memberPermissions.has('MANAGE_MESSAGES')) {
-      return interaction.reply({ content: 'You need Manage Messages permission!', ephemeral: true });
-    }
-
-    const user = interaction.options.getUser('user');
-    const reason = interaction.options.getString('reason');
-
-    await interaction.reply(`⚠️ ${user} has been warned for: ${reason}`);
-    logSecurityEvent(interaction.guild, 'Warning', { user: user.tag, reason });
-  }
-
-  if (interaction.commandName === 'addrole') {
-    // Ensure we have member permissions before checking
-    if (!interaction.memberPermissions.has('MANAGE_ROLES')) {
-      return interaction.reply({ content: 'You need Manage Roles permission!', ephemeral: true });
-    }
-
-    const user = interaction.options.getUser('user');
-    const role = interaction.options.getRole('role');
-
-    try {
-      const member = await interaction.guild.members.fetch(user.id);
-      await member.roles.add(role);
-      await interaction.reply(`✅ Added role ${role} to ${user.tag}`);
-    } catch (error) {
-      await interaction.reply('Failed to add role!');
-    }
-  }
-
-  if (interaction.commandName === 'removerole') {
-    // Ensure we have member permissions before checking
-    if (!interaction.memberPermissions.has('MANAGE_ROLES')) {
-      return interaction.reply({ content: 'You need Manage Roles permission!', ephemeral: true });
-    }
-
-    const user = interaction.options.getUser('user');
-    const role = interaction.options.getRole('role');
-
-    try {
-      const member = await interaction.guild.members.fetch(user.id);
-      await member.roles.remove(role);
-      await interaction.reply(`✅ Removed role ${role} from ${user.tag}`);
-    } catch (error) {
-      await interaction.reply('Failed to remove role!');
-    }
-  }
-
-  if (interaction.commandName === 'autorole') {
-    // Ensure we have member permissions before checking
-    if (!interaction.memberPermissions.has('ADMINISTRATOR')) {
-      return interaction.reply({ content: 'You need Administrator permission!', ephemeral: true });
-    }
-
-    const role = interaction.options.getRole('role');
-    autoRole = role;
-    await interaction.reply(`✅ Auto-role set to ${role.name}`);
-  }
-
-  if (interaction.commandName === 'verify') {
-    if (!SECURITY_CONFIG.verification.enabled) {
-      return interaction.reply({ content: 'Verification is currently disabled.', ephemeral: true });
-    }
-
-    const accountAge = Date.now() - interaction.user.createdTimestamp;
-    if (accountAge < SECURITY_CONFIG.verification.accountAgeDays * 24 * 60 * 60 * 1000) {
-      return interaction.reply({ 
-        content: `Your account must be at least ${SECURITY_CONFIG.verification.accountAgeDays} days old to verify.`,
-        ephemeral: true 
-      });
-    }
-
-    const verifiedRole = interaction.guild.roles.cache.find(r => r.name === SECURITY_CONFIG.verification.requiredRole);
-    if (!verifiedRole) {
-      return interaction.reply({ content: 'Verification role not found!', ephemeral: true });
-    }
-
-    if (interaction.member.roles.cache.has(verifiedRole.id)) {
-      return interaction.reply({ content: 'You are already verified!', ephemeral: true });
-    }
-
-    // Generate captcha
-    const captcha = Math.random().toString(36).slice(2, 8).toUpperCase();
-    const captchaEmbed = {
-      title: '✅ Verification Required',
-      description: `Please type this code: \`${captcha}\`\nYou have 5 minutes to complete verification.`,
-      color: 0x00FF00
-    };
-
-    await interaction.reply({ embeds: [captchaEmbed], ephemeral: true });
-
-    const filter = m => m.author.id === interaction.user.id;
-    try {
-      const collected = await interaction.channel.awaitMessages({ 
-        filter, 
-        max: 1, 
-        time: SECURITY_CONFIG.verification.captchaTimeout,
-        errors: ['time'] 
-      });
-
-      if (collected.first().content === captcha) {
-        await interaction.member.roles.add(verifiedRole);
-        await interaction.followUp({ content: '✅ You have been verified!', ephemeral: true });
-        Logger.logEvent(interaction.guild, 'verification', {
-          user: interaction.user.tag,
-          success: true
-        });
-      } else {
-        await interaction.followUp({ content: '❌ Invalid captcha code!', ephemeral: true });
-      }
-    } catch (error) {
-      await interaction.followUp({ content: '❌ Verification timed out!', ephemeral: true });
-    }
-  }
-
-  if (interaction.commandName === 'uptime') {
-    const uptime = Date.now() - BOT_START_TIME;
-    const days = Math.floor(uptime / (1000 * 60 * 60 * 24));
-    const hours = Math.floor((uptime % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-    const minutes = Math.floor((uptime % (1000 * 60 * 60)) / (1000 * 60));
-    await interaction.reply(`Uptime: ${days}d ${hours}h ${minutes}m`);
-  }
-
-  // Beta announcement is now handled by /betaannounce command only
-
-  if (interaction.commandName === 'betaannounce') {
-    if (!interaction.memberPermissions.has('ADMINISTRATOR')) {
-      return interaction.reply({ content: 'You need Administrator permission!', ephemeral: true });
-    }
-
-    const channel = client.channels.cache.get('1363579411571544416');
-    if (channel) {
-      const betaEmbed = new EmbedBuilder()
-        .setTitle('🌟 NEWLIFE ROLEPLAY REVAMPED - BETA TEST ANNOUNCEMENT 🌟')
-        .setColor('#FF6B6B')
-        .setDescription([
-          '═══════════════════════════════════',
-          '',
-          '📢 **EXCITING NEWS!**',
-          'We are thrilled to announce that Anarchy Reborn Roleplay is conducting an exclusive beta test phase!',
-          '',
-          '🎮 **WHAT TO EXPECT**',
-          '• New Game Features',
-          '• Enhanced Roleplay Systems',
-          '• Improved Server Performance',
-          '• Exclusive Beta Tester Rewards',
-          '• Direct Input on Game Development',
-          '',
-          '🔍 **BETA TEST DETAILS**',
-          '• Duration: 2 Weeks',
-          '• All Players Welcome',
-          '• Real-time Feedback System',
-          '• Special Discord Roles',
-          '',
-          '💎 **BETA TESTER BENEFITS**',
-          '• Early Access to New Features',
-          '• Exclusive In-game Items',
-          '• Special Discord Badge',
-          '• Direct Communication with Devs',
-          '',
-          '🎯 **HOW TO PARTICIPATE**',
-          '1. Join our Discord Server',
-          '2. Connect to: `anarchyrp.ph-host.xyz:7777`',
-          '3. Start Testing and Having Fun!',
-          '',
-          '═══════════════════════════════════'
-        ].join('\n'))
-        .setImage('https://cdn.discordapp.com/avatars/1364443184100282369/1981a71da1c567b98d7d921356329161.webp?size=1024')
-        .setTimestamp()
-        .setFooter({ text: '🌟 NEWLIFE ROLEPLAY REVAMPED - Beta Test Phase 🌟' });
-
-      await channel.send({ embeds: [betaEmbed] });
-      await interaction.reply({ content: 'Beta test announcement sent successfully!', ephemeral: true });
-    } else {
-      await interaction.reply({ content: 'Could not find the specified channel!', ephemeral: true });
-    }
-  }
-
-  // Custom replies
-  if (interaction.commandName === 'about' || interaction.commandName === 'faq') {
-    await interaction.reply(customReplies[interaction.commandName]);
-  }
-
-  // Economy commands
-  if (interaction.commandName === 'daily') {
-    const result = await economy.daily(interaction.user.id);
-    if (result) {
-      await interaction.reply(`You received your daily 200 coins! Balance: ${result}`);
-    } else {
-      await interaction.reply('You already claimed your daily reward!');
-    }
-  }
-
-  if (interaction.commandName === 'balance') {
-    const userData = economy.data[interaction.user.id] || { balance: 0, xp: 0, level: 1 };
-    await interaction.reply({
-      embeds: [{
-        title: '💰 User Stats',
-        fields: [
-          { name: 'Balance', value: `${userData.balance} coins`, inline: true },
-          { name: 'Level', value: `${userData.level}`, inline: true },
-          { name: 'XP', value: `${userData.xp}/${economy.calculateXPForLevel(userData.level)}`, inline: true }
-        ],
-        color: 0xFFD700
-      }]
-    });
-  }
-
-  if (interaction.commandName === 'work') {
-    const earnings = await economy.work(interaction.user.id);
-    if (earnings) {
-      await interaction.reply(`You worked and earned ${earnings} coins!`);
-    } else {
-      await interaction.reply('There was an error processing your work.');
-    }
-  }
-
-  if (interaction.commandName === 'shop') {
-    const shopEmbed = {
-      title: '🏪 Shop',
-      description: shopItems.map(item => 
-        `${item.name}: ${item.price} coins`
-      ).join('\n'),
-      color: 0x00FF00
-    };
-    await interaction.reply({ embeds: [shopEmbed] });
-  }
-
-  if (interaction.commandName === 'leaderboard') {
-    const leaderboard = economy.getLeaderboard();
-    const fields = await Promise.all(leaderboard.map(async ([userId, data], index) => {
-      const user = await client.users.fetch(userId);
-      return {
-        name: `${index + 1}. ${user.tag}`,
-        value: `${data.balance} coins`,
-        inline: true
+      const specificRulesEmbed = {
+        title: '🛡️ SPECIFIC SERVER RULES',
+        color: 0xFF6B6B,
+        description: '═══════════════════════════════════\n\n' +
+          '__**RESPECT**__\n```\nALWAYS Be respectful of others in the community. Any forms of toxicity, racism, misogyny etc. will not be tolerated and may result in a ban.\n```\n\n' +
+          '__**INDECENT PROFILE**__\n```\nIt is strictly prohibited to upload any profile and/or server profile photo in our server that is malicious and/or offensive.\n```\n\n' +
+          '__**HACKS**__\n```\nAny user that will be caught using any tools for hacks, bugs, spamming, and glitches will be banned IMMEDIATELY.\n```\n\n' +
+          '__**NSFW CONTENT**__\n```\nNo sharing any pornographic content, especially in #city-gallery and #video-clips.\n```\n\n' +
+          '__**IMPERSONATION**__\n```\nAnyone is not allowed to impersonate any staff members. Any forms of this act will result into permanent ban in discord and in-game.\n```\n\n' +
+          '__**SERVER ADS**__\n```\nAny forms of advertisement to any different discord servers that are not authorized by the Administration is strictly prohibited.\n```\n\n' +
+          '__**MENTION SPAM**__\n```\nWe will be allowing mentions from the Citizens but ONLY if NECESSARY.\n```\n\n' +
+          '__**DISCORD POLICY**__\n```\nBreaking our or Discord\'s ToS or Community Guidelines will result in an immediate irrevocable ban.\n```'
       };
-    }));
 
-    await interaction.reply({
-      embeds: [{
-        title: '🏆 Economy Leaderboard',
-        fields,
-        color: 0xFFD700
-      }]
-    });
-  }
-
-  if (interaction.commandName === 'setwelcome') {
-    if (!interaction.memberPermissions.has('ADMINISTRATOR')) {
-      return interaction.reply({ content: 'You need Administrator permission!', ephemeral: true });
+      await rulesChannel.send({ embeds: [generalRulesEmbed, specificRulesEmbed] });
+      await interaction.reply({ content: `Discord rules have been posted in <#${rulesChannel.id}>`, ephemeral: true });
     }
-
-    const message = interaction.options.getString('message');
-    const channel = interaction.options.getChannel('channel');
-    const imageUrl = interaction.options.getString('imageurl');
-
-    if (!channel.isTextBased()) {
-      return interaction.reply({ content: 'Please select a text channel!', ephemeral: true });
-    }
-
-    const welcomeConfig = {
-      message,
-      channelId: channel.id,
-      imageUrl
-    };
-
-    welcomeManager.setWelcome(interaction.guildId, channel.id);
-    await interaction.reply(`Welcome message configured for ${channel}!`);
-  }
-  if (interaction.commandName === 'ip') {
-    await interaction.reply('Server IP: anarchyrp.ph-host.xyz:7777');
-  }
-
-  if (interaction.commandName === 'serverstatus') {
-    try {
-      const response = await queryServer();
-      await interaction.reply({
-        embeds: [{
-          title: '🎮 Server Status',
-          fields: [
-            { name: 'Server Name', value: response.hostname || 'Unknown', inline: true },
-            { name: 'Players', value: `${response.online}/${response.maxplayers}`, inline: true },
-            { name: 'Gamemode', value: response.gamemode || 'Unknown', inline: true }
-          ],
-          color: 0x00FF00
-        }]
-      });
-    } catch (error) {
-      await interaction.reply({ content: '❌ Failed to query server status', ephemeral: true });
-    }
-  }
-  if (interaction.commandName === 'serverrule') {
-    const rulesChannel = client.channels.cache.get('1260925060248768615');
-    if (!rulesChannel) {
-      return interaction.reply({ content: 'Rules channel not found!', ephemeral: true });
-    }
-
-    const serverRulesEmbeds = [
-      {
-        title: '📜 SERVER RULES - PART 1',
-        color: 0xFF6B6B,
-        description: '═══════════════════════════════════\n\n' +
-          '**FORCE RP ON MEDIC**\n```\nForcing the medic to not heal the injured player is considered as force rp and finishing the player will be considered a non rp finish\n```\n\n' +
-          '**TRASHTALKING THE INJURED PLAYER**\n```\nNo toxic policy\nTrashtalking the injured player or using animation on the injured player is strictly not allowed.\n```\n\n' +
-          '**ABUSE NEWB SYSTEM**\n```\nAbusing the newbie system is not allowed. Players are only allowed to roleplay or join gun fights when you are level 2.\n```\n\n' +
-          '**NON RP KILLING MEDIC**\n```\nYou are not allowed to kill a medic while they are saving the injured player.\n```\n\n' +
-          '**TRASHTALKING IN GLOBAL**\n```\nNo toxic policy\nTrashtalking or ooc insult in global or vip chat is not allowed and will be marked as toxicity\n```\n\n' +
-          '**BAN EVADING**\n```\nUsing any account to access our server whilst any of your other accounts have an active ban is not allowed without admin permission.\n```\n\n' +
-          '**HACKING**\n```\nUsing any kind 3rd party software to gain an advantage over other players is prohibited.\n```\n\n' +
-          '**MONEY FARMING**\n```\nCreating new accounts and transferring money between accounts is not allowed.\n```\n\n' +
-          '**REAL WORLD TRADING**\n```\nSelling in-game items/currency for real money is prohibited. Account sales require owner permission.\n```\n\n' +
-          '**SERVER ADVERTISING**\n```\nAdvertising other SAMP servers will result in account ban.\n```\n\n' +
-          '═══════════════════════════════════',
-        footer: { text: 'NEWLIFE ROLEPLAY REVAMPED • Server Rules Part 1' }
-      },
-      {
-        title: '📜 SERVER RULES - PART 2',
-        color: 0xFF6B6B,
-        description: '═══════════════════════════════════\n\n' +
-          '**MULTIPLE ACCOUNTS**\n```\nUsing alternative accounts to avoid punishments is not allowed.\n```\n\n' +
-          '**RUSH TAZING**\n```\nTazing a player while they are aiming/shooting at you is not allowed.\nOther LEOs may taze suspects from behind.\n```\n\n' +
-          '**AVOIDING ADMIN CONFRONTATION**\n```\nLogging off to avoid punishment is not permitted.\n```\n\n' +
-          '**AVOIDING ROLEPLAY**\n```\nYou must comply with roleplay situations. Do not avoid or act unrealistically.\n```\n\n' +
-          '**VEHICLE DEATHMATCH**\n```\nIntentionally using vehicles as weapons is not permitted.\n```\n\n' +
-          '**DEATHMATCHING**\n```\nAttacking/killing players without IC reason is not permitted.\n```\n\n' +
-          '═══════════════════════════════════',
-        footer: { text: 'NEWLIFE ROLEPLAY REVAMPED • Server Rules Part 2' }
-      },
-      {
-        title: '📜 SERVER RULES - PART 3',
-        color: 0xFF6B6B,
-        description: '═══════════════════════════════════\n\n' +
-          '**EXPLOITING**\n```\nAbusing game/script bugs for your advantage is not allowed.\n```\n\n' +
-          '**LOGGING TO AVOID**\n```\nExiting game to avoid death, arrest, or RP situations is prohibited.\n```\n\n' +
-          '**NON RP GUN PULL OUT**\n```\nPulling heavy weapons in public places or abusing RP gun commands is not allowed.\n```\n\n' +
-          '**ABUSE GREENZONE**\n```\nGreenzone rules apply even without system indicators.\n```\n\n' +
-          '**OOC INSULT**\n```\nZero tolerance for toxic behavior and out-of-character insults.\n```\n\n' +
-          '═══════════════════════════════════',
-        footer: { text: 'NEWLIFE ROLEPLAY REVAMPED • Server Rules Part 3' }
-      },
-      {
-        title: '📜 SERVER RULES - PART 4',
-        color: 0xFF6B6B,
-        description: '═══════════════════════════════════\n\n' +
-          '**NON RP MASK/ABUSE**\n```\nMask usage only allowed during illegal RP/robberies.\n```\n\n' +
-          '**HOLDUP IN GREENZONE**\n```\nRobbing players in greenzone is prohibited.\n```\n\n' +
-          '**ILLEGAL MODIFICATIONS**\n```\nModifications giving advantages are not allowed, including bullet tracers.\n```\n\n' +
-          '**LYING TO ADMINISTRATORS**\n```\nHonest responses required for admin inquiries.\n```\n\n' +
-          '**TROLLING**\n```\nExcessive deliberate disruption is not allowed.\n```\n\n' +
-          '**REVENGE KILLING**\n```\nReturning to previous death situations is prohibited.\n```\n\n' +
-          '**RANDOM SHOOTING**\n```\nRandom shooting and heavy weapon use in public places is not allowed.\n```\n\n' +
-          '**RAIDING FACTION/FAMILY HQs**\n```\nRaiding official locations requires admin permission and supervision.\n```\n\n' +
-          '═══════════════════════════════════',
-        footer: { text: 'NEWLIFE ROLEPLAY REVAMPED • Server Rules Part 4' }
-      }
-    ];
-
-    for (const embed of serverRulesEmbeds) {
-      await rulesChannel.send({ embeds: [embed] });
-    }
-    
-    await interaction.reply({ content: `Server rules have been posted in <#${rulesChannel.id}>`, ephemeral: true });
-    return;
-  }
-
-  if (interaction.commandName === 'discordrule') {
-    const rulesChannel = client.channels.cache.get('1260925060248768614');
-    if (!rulesChannel) {
-      return interaction.reply({ content: 'Rules channel not found!', ephemeral: true });
-    }
-
-    const generalRulesEmbed = {
-      title: '📜 GENERAL SERVER RULES',
-      color: 0x7289DA,
-      description: '═══════════════════════════════════\n\n' +
-        '**1️⃣ Be Respectful**\n```\nTreat all members with respect and kindness. Avoid any form of harassment, discrimination, or hate speech. Encourage a positive and inclusive environment for everyone.\n```\n\n' +
-        '**2️⃣ No Spamming or Flooding**\n```\nAvoid excessive or repetitive messaging, sending large amounts of unsolicited content, or flooding the chat with unnecessary messages. Keep discussions relevant and focused.\n```\n\n' +
-        '**3️⃣ Use Appropriate Language**\n```\nKeep the language used in the Discord server appropriate and avoid excessive swearing or offensive language. Be mindful of the diverse audience and maintain a respectful tone.\n```\n\n' +
-        '**4️⃣ No Advertising or Self-Promotion**\n```\nAvoid promoting personal or external content without permission. Respect the server\'s guidelines regarding advertising and self-promotion.\n```\n\n' +
-        '**5️⃣ Respect Privacy**\n```\nDo not share personal information about yourself or others without their consent. Respect the privacy and boundaries of fellow members.\n```\n\n' +
-        '**6️⃣ Follow Channel Guidelines**\n```\nAdhere to the guidelines set for each channel within the Discord server. Stay on topic and use the appropriate channels for specific discussions or content.\n```\n\n' +
-        '**7️⃣ No NSFW Content**\n```\nAvoid sharing or discussing explicit or Not Safe for Work (NSFW) content. Keep the server safe and appropriate for all ages.\n```\n\n' +
-        '**8️⃣ No Trolling or Flame Wars**\n```\nDo not engage in trolling, flame wars, or intentionally provoking arguments. Keep discussions civil and constructive.\n```\n\n' +
-        '**9️⃣ Report Issues**\n```\nIf you encounter any issues or witness a violation of the rules, report it to the server moderators or administrators. Provide necessary details and evidence to assist in resolving the situation.\n```\n\n' +
-        '═══════════════════════════════════',
-      footer: {
-        text: 'NEWLIFE ROLEPLAY REVAMPED • General Guidelines'
-      },
-      timestamp: new Date()
-    };
-
-    const specificRulesEmbed = {
-      title: '🛡️ SPECIFIC SERVER RULES',
-      color: 0xFF6B6B,
-      description: '═══════════════════════════════════\n\n' +
-        '__**RESPECT**__\n```\nALWAYS Be respectful of others in the community. Any forms of toxicity, racism, misogyny etc. will not be tolerated and may result in a ban.\n```\n\n' +
-        '__**INDECENT PROFILE**__\n```\nIt is strictly prohibited to upload any profile and/or server profile photo in our server that is malicious and/or offensive.\n```\n\n' +
-        '__**HACKS**__\n```\nAny user that will be caught using any tools for hacks, bugs, spamming, and glitches will be banned IMMEDIATELY.\n```\n\n' +
-        '__**NSFW CONTENT**__\n```\nNo sharing any pornographic content, especially in #city-gallery and #video-clips.\n```\n\n' +
-        '__**IMPERSONATION**__\n```\nAnyone is not allowed to impersonate any staff members. Any forms of this act will result into permanent ban in discord and in-game.\n```\n\n' +
-        '__**SERVER ADS**__\n```\nAny forms of advertisement to any different discord servers that are not authorized by the Administration is strictly prohibited.\n```\n\n' +
-        '__**MENTION SPAM**__\n```\nWe will be allowing mentions from the Citizens but ONLY if NECESSARY.\n```\n\n' +
-        '__**DISCORD POLICY**__\n```\nBreaking our or Discord\'s ToS or Community Guidelines will result in an immediate irrevocable ban.\n```\n\n' +
-        '═══════════════════════════════════',
-      footer: {
-        text: 'NEWLIFE ROLEPLAY REVAMPED • Specific Guidelines'
-      },
-      timestamp: new Date()
-    };
-
-    await rulesChannel.send({ embeds: [generalRulesEmbed] });
-    await rulesChannel.send({ embeds: [specificRulesEmbed] });
-    await interaction.reply({ content: `Rules have been posted in <#${rulesChannel.id}>`, ephemeral: true });
-    return;
-  }
-
-  if (interaction.commandName === 'staff') {
-    // Check if command is used in the correct channel
-    if (interaction.channelId !== '1363579890141499573') {
-      return interaction.reply({ content: 'This command can only be used in the designated staff channel!', ephemeral: true });
-    }
-
-    const staffEmbed = {
-      title: '👥 NEWLIFE ROLEPLAY REVAMPED STAFF LIST',
-      color: 0xFF6B6B,
-      fields: [
-        {
-          name: '👮 [AR] Admin Report',
-          value: '1. SHAG\n2. KEI\n3. Hiring',
-          inline: true
-        },
-        {
-          name: '🚫 [BA] Ban Appeal',
-          value: '1. REAPER\n2. Hiring\n3. Hiring',
-          inline: true
-        },
-        {
-          name: '⚔️ [FM] Faction Management',
-          value: '1. EL\n2. DON\n3. Hiring',
-          inline: true
-        },
-        {
-          name: '🎭 [GM] Gang Management',
-          value: '1. DRAKE\n2. SOULJA',
-          inline: true
-        },
-        {
-          name: '🏠 [PM] Property Management',
-          value: '1. TERRIUZ\n2. Founder',
-          inline: true
-        },
-        {
-          name: '💻 [DEV] Developer',
-          value: '1. TiyoBerting',
-          inline: true
-        },
-        {
-          name: '🗺️ [MAP] Mapper',
-          value: '1. PSYCHO',
-          inline: true
-        },
-        {
-          name: '🎮 [EM] Event Management',
-          value: '1. MATSUS\n2. Hiring',
-          inline: true
-        },
-        {
-          name: '👑 [AM] Admin Management',
-          value: '1. BLUEWII\n2. Hiring\n3. Hiring',
-          inline: true
-        }
-      ],
-      thumbnail: {
-        url: 'https://cdn.discordapp.com/avatars/1364443184100282369/1981a71da1c567b98d7d921356329161.webp?size=1024'
-      },
-      footer: {
-        text: 'NEWLIFE ROLEPLAY REVAMPED Staff Team'
-      },
-      timestamp: new Date()
-    };
-
-    await interaction.reply({ embeds: [staffEmbed] });
-    return;
-}
-
-if (interaction.commandName === 'donation') {
-    const donationChannel = client.channels.cache.get('1363725566238523512');
-    if (!donationChannel) {
-      return interaction.reply({ content: 'Donation channel not found!', ephemeral: true });
-    }
-
-    const donationEmbeds = [
-      {
-        title: '🎒 BACKPACK LIST',
-        color: 0xFF6B6B,
-        image: { url: 'https://cdn.discordapp.com/attachments/1364574482345361439/1366278097220927549/Red_White_and_Yellow_Modern_Gaming_Initials_Youtube_Channel_Logo_20250422_215024_0000.png?ex=68105d22&is=680f0ba2&hm=ade8cbddd63c6182a9522fef60d48faeea08cca87bea1daf70752658421c6415&' }
-      },
-      {
-        title: '🚘 GARAGE LIST',
-        color: 0xFF6B6B,
-        image: { url: 'https://cdn.discordapp.com/attachments/1364574482345361439/1366278097766449272/Red_White_and_Yellow_Modern_Gaming_Initials_Youtube_Channel_Logo_20250422_214813_0000.png?ex=68105d22&is=680f0ba2&hm=4a185b19dc3b0961b8a07774196bf815ed2f345f3e51c12a6175fa192f78dbb2&' }
-      },
-      {
-        title: '🏢 CUSTOM MAPPED BUSINESS',
-        color: 0xFF6B6B,
-        image: { url: 'https://cdn.discordapp.com/attachments/1364574482345361439/1366278098043146250/Red_White_and_Yellow_Modern_Gaming_Initials_Youtube_Channel_Logo_20250422_214517_0000.png?ex=68105d22&is=680f0ba2&hm=936c095cd3e11509186aa233280608764b781d882649c865b6090857737c4382&' }
-      },
-      {
-        title: '🏪 DYNAMIC BUSINESS',
-        color: 0xFF6B6B,
-        image: { url: 'https://cdn.discordapp.com/attachments/1364574482345361439/1366278098399789056/Red_White_and_Yellow_Modern_Gaming_Initials_Youtube_Channel_Logo_20250422_214100_0000.png?ex=68105d22&is=680f0ba2&hm=93b019f525b9a88c1262e06574823961f51e121e00c4a60407515b5757a6c7ea&' }
-      },
-      {
-        title: '🏬 MALL BUSINESS',
-        color: 0xFF6B6B,
-        image: { url: 'https://cdn.discordapp.com/attachments/1364574482345361439/1366278098739400786/Red_White_and_Yellow_Modern_Gaming_Initials_Youtube_Channel_Logo_20250422_213151_0000.png?ex=68105d22&is=680f0ba2&hm=3759a4eae06e28bf52e4f80f3119687eceec8b52f9df361d6589b5d5ad9fd1c7&' }
-      },
-      {
-        title: '⚙️ DYNAMIC SYSTEMS',
-        color: 0xFF6B6B,
-        image: { url: 'https://cdn.discordapp.com/attachments/1364574482345361439/1366278099217416254/Red_White_and_Yellow_Modern_Gaming_Initials_Youtube_Channel_Logo_20250422_212729_0000.png?ex=68105d23&is=680f0ba3&hm=569ea87366147272bf52b8d13fbad5af7d20ff79524ac2cc479bb910a573d5cd&' }
-      },
-      {
-        title: '🗺️ LANDS',
-        color: 0xFF6B6B,
-        image: { url: 'https://cdn.discordapp.com/attachments/1364574482345361439/1366278099540512789/Red_White_and_Yellow_Modern_Gaming_Initials_Youtube_Channel_Logo_20250422_211829_0000.png?ex=68105d23&is=680f0ba3&hm=866a3eba97ca02660c402f4445dc360f1b62e009142970532542e0b73ce06cd0&' }
-      },
-      {
-        title: '🏗️ CUSTOM MAPPING',
-        color: 0xFF6B6B,
-        image: { url: 'https://cdn.discordapp.com/attachments/1364574482345361439/1366278099926257704/Red_White_and_Yellow_Modern_Gaming_Initials_Youtube_Channel_Logo_20250422_211358_0000.png?ex=68105d23&is=680f0ba3&hm=5d7b1799c33d88a886e5c3e99a64818269d8a9a4aee6cdc8943ea162913ca589&' }
-      },
-      {
-        title: '🏠 HOUSE LIST',
-        color: 0xFF6B6B,
-        image: { url: 'https://cdn.discordapp.com/attachments/1364574482345361439/1366278100245286942/Red_White_and_Yellow_Modern_Gaming_Initials_Youtube_Channel_Logo_20250422_210550_0000.png?ex=68105d23&is=680f0ba3&hm=2c6e52f9a2ea5d536472d884485f208d650ef9ebbee50797e5e54d8f77a1c479&' }
-      },
-      {
-        title: '🚗 VEHICLE LIST',
-        color: 0xFF6B6B,
-        image: { url: 'https://cdn.discordapp.com/attachments/1364574482345361439/1366278100723433513/Red_White_and_Yellow_Modern_Gaming_Initials_Youtube_Channel_Logo_20250422_204703_0000.png?ex=68105d23&is=680f0ba3&hm=d95ebbe26491064220c2075bcb95e29056b28d36e35ac3954da0e31047044b76&' }
-      },
-      {
-        title: '🚘 GARAGE PRICES',
-        color: 0xFF6B6B,
-        image: { url: 'https://cdn.discordapp.com/attachments/1364574482345361439/1366278100723433513/Red_White_and_Yellow_Modern_Gaming_Initials_Youtube_Channel_Logo_20250422_204703_0000.png?ex=68105d23&is=680f0ba3&hm=d95ebbe26491064220c2075bcb95e29056b28d36e35ac3954da0e31047044b76&' },
-        footer: { text: 'Contact Property Management for inquiries • NEWLIFE ROLEPLAY REVAMPED' }
-      }
-    ];
-
-    for (const embed of donationEmbeds) {
-      await donationChannel.send({ embeds: [embed] });
-    }
-
-    await interaction.reply({ content: `Donation list has been posted in ${donationChannel}`, ephemeral: true });
-  }
-
 });
-
-// Error handling
-client.on('error', error => {
-  console.error('Discord client error:', error);
-});
-
-process.on('unhandledRejection', error => {
-  console.error('Unhandled promise rejection:', error);
-});
-
-client.login(token);

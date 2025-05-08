@@ -1,7 +1,7 @@
 {
   "name": "nodejs",
   "version": "1.0.0",
-  "description": "",
+  "description": "Discord bot using Discord.js and music features",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
@@ -24,9 +24,13 @@
     "express": "^5.1.0",
     "ffmpeg-static": "^5.2.0",
     "libsodium-wrappers": "^0.7.15",
+    "mongoose": "^8.14.1",
     "node-fetch": "^3.3.2",
     "openai": "^4.96.0",
     "play-dl": "^1.9.7",
     "samp-query": "^0.1.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }
