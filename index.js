@@ -30,27 +30,22 @@ app.listen(3000, '0.0.0.0', () => {
   console.log('Express server is running!');
 });
 
-const token = process.env.NEWLIFE_TOKEN;
+let token = process.env.DISCORD_TOKEN;
 if (!token) {
-  console.error('ERROR: Missing NEWLIFE_TOKEN environment variable');
+  console.error('ERROR: Missing DISCORD_TOKEN environment variable');
   console.error('Please add your bot token in the Secrets tab (Environment variables)');
   process.exit(1);
-}
-
-// Validate token format
-if (!token || !/^[A-Za-z0-9_-]{24,}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27}$/.test(token)) {
-  console.error('ERROR: Invalid Discord token format');
-  console.error('Token length:', token ? token.length : 0);
-  console.error('Please check your token in the Secrets tab');
-  console.error('Make sure there are no spaces before or after the token');
-  process.exit(1);
+} else {
+  console.log('Discord token is configured');
+  // Remove any whitespace from token
+  token = token.trim();
 }
 
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 
 // Self-ping to keep bot alive
 setInterval(() => {
-    fetch('https://' + process.env.REPL_SLUG + '.' + process.env.REPL_OWNER + '.repl.co').then(() => {
+    fetch(`https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`).then(() => {
         console.log('Pinging to keep alive');
     }).catch(console.error);
 }, 240000); // every 4 minutes
@@ -307,6 +302,10 @@ const {
 } = require('./aiHandler.js');
 
 const commands = [
+  new SlashCommandBuilder()
+    .setName('setupverification')
+    .setDescription('Send the verification message')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 // Register the /updates command
 new SlashCommandBuilder()
   .setName('updates')
@@ -858,6 +857,9 @@ const guildId = '1260925059477012511';
       { body: commands }
     );
     console.log('Slash commands registered globally!');
+    
+    // Login the client
+    await client.login(token);
   } catch (err) {
     console.error('Error registering commands:', err);
   }
@@ -907,8 +909,24 @@ client.on('disconnect', () => {
 });
 
 client.once('ready', async () => {
-  console.log(`Bot is online as ${client.user.tag}`);
-  console.log('Connected to Discord gateway!');
+  console.log('\n═══════════════════════════════════');
+  console.log(`🟢 Bot is ONLINE`);
+  console.log(`🤖 Bot Username: ${client.user.username}`);
+  console.log(`🔢 Discriminator: #${client.user.discriminator}`);
+  console.log(`🆔 Bot ID: ${client.user.id}`);
+  console.log(`📊 Serving ${client.guilds.cache.size} servers`);
+  console.log(`👾 Connected to Discord Gateway`);
+  console.log('═══════════════════════════════════\n');
+  console.log('═══════════════════════════════════');
+
+  // Set bot as online with activity
+  await client.user.setPresence({
+    status: 'online',
+    activities: [{
+      name: '✨ NEWLIFE ROLEPLAY REVAMPED',
+      type: ActivityType.Playing
+    }]
+  });
 
   try {
     // Initialize ticket handlers first
@@ -1430,7 +1448,57 @@ client.once('ready', () => {
 });
 
 client.on('interactionCreate', async interaction => {
+  if (interaction.isButton() && interaction.customId === 'verify_button') {
+    try {
+      const verifiedRole = interaction.guild.roles.cache.get('1260925059535736942');
+      if (!verifiedRole) {
+        return interaction.reply({ content: 'Verification role not found!', ephemeral: true });
+      }
+
+      await interaction.member.roles.add(verifiedRole);
+      await interaction.reply({ content: '✅ You have been verified! Welcome to the server!', ephemeral: true });
+    } catch (error) {
+      console.error('Error in verification:', error);
+      await interaction.reply({ content: 'An error occurred while verifying you. Please contact staff.', ephemeral: true });
+    }
+    return;
+  }
+
   if (!interaction.isChatInputCommand()) return;
+
+  if (interaction.commandName === 'setupverification') {
+
+    const verifyEmbed = new EmbedBuilder()
+      .setTitle('🔐 Server Verification')
+      .setDescription([
+        '**Welcome to NEWLIFE ROLEPLAY REVAMPED!**',
+        '',
+        '**📜 Server Rules:**',
+        '• Be respectful to all members',
+        '• No spamming or flooding',
+        '• No NSFW content',
+        '• Follow Discord ToS and Guidelines',
+        '• No advertising or self-promotion',
+        '• Use appropriate channels for discussions',
+        '',
+        '🔹 Click the button below to verify and gain access to the server!'
+      ].join('\n'))
+      .setColor(0x5865F2)
+      .setTimestamp()
+      .setFooter({ text: 'NEWLIFE ROLEPLAY REVAMPED • Verification System' });
+
+    const row = new ActionRowBuilder()
+      .addComponents(
+        new ButtonBuilder()
+          .setCustomId('verify_button')
+          .setLabel('Verify')
+          .setStyle(ButtonStyle.Success)
+          .setEmoji('✅')
+      );
+
+    await interaction.channel.send({ embeds: [verifyEmbed], components: [row] });
+    await interaction.reply({ content: 'Verification message sent!', ephemeral: true });
+  }
 
 // Handle the /updates command
 if (interaction.commandName === 'updates') {
@@ -1832,7 +1900,39 @@ Breaking these rules may result in warnings, mutes, kicks, or bans depending on 
     }
     }
 
-    if (interaction.commandName === 'serverrule') {
+    if (interaction.commandName === 'appreciation') {
+  const user = interaction.options.getUser('user');
+  const appreciationChannel = client.channels.cache.get('1286765949088694282');
+  
+  if (!appreciationChannel) {
+    return interaction.reply({ content: 'Appreciation channel not found!', ephemeral: true });
+  }
+
+  const appreciationEmbed = new EmbedBuilder()
+    .setTitle('💖 Donation Appreciation')
+    .setDescription([
+      `🌟 A heartfelt thank you to ${user} for their generous donation!`,
+      '',
+      '```Your support means the world to us and helps keep our community thriving. Your generosity contributes directly to making our server better for everyone.```',
+      '',
+      '**🎉 Benefits of your donation:**',
+      '• Helping maintain and improve server quality',
+      '• Supporting our dedicated staff team',
+      '• Enabling new features and updates',
+      '• Strengthening our amazing community',
+      '',
+      '*From all of us at NEWLIFE ROLEPLAY REVAMPED, thank you for your incredible support!*'
+    ].join('\n'))
+    .setColor(0xFF69B4)
+    .setThumbnail(user.displayAvatarURL({ dynamic: true }))
+    .setTimestamp()
+    .setFooter({ text: 'NEWLIFE ROLEPLAY REVAMPED • Donor Appreciation' });
+
+  await appreciationChannel.send({ embeds: [appreciationEmbed] });
+  await interaction.reply({ content: 'Appreciation message sent!', ephemeral: true });
+}
+
+if (interaction.commandName === 'serverrule') {
       const rulesChannel = client.channels.cache.get('1260925060248768614');
       if (!rulesChannel) {
         return interaction.reply({ content: 'Rules channel not found!', ephemeral: true });
